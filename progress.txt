@@ -64,3 +64,19 @@ Follow-up risk / notes:
 - Maven-vs-Gradle note from TASK-002 still pending — relevant once TASK-006 starts.
 - Next pending task: TASK-005 (root `README.md` bootstrap notes).
 
+## 2026-04-26 — TASK-005: root README.md bootstrap notes
+
+What changed:
+- Created root `README.md` with: project one-liner pointing to `architecture.md`; repo layout section linking `docker-compose.yml`, `backend/`, `frontend/`, and `.env.example`; bootstrap order section (Postgres via `docker compose up -d db` → backend via `./mvnw spring-boot:run` → frontend via `npm run dev`); pointers to `.env.example` for config and to TASK-081 for the full runbook.
+- Marked TASK-005 status = done in tasks.json.
+
+What was tested:
+- Per task spec: opened README.md and verified it references `docker-compose.yml`, `backend/`, and `frontend/` (grep confirmed all three on lines 9-11 and 19-20).
+- Skipped gradle compile step from the loop instructions — backend not yet scaffolded (TASK-006 still pending). Only file artifact is documentation.
+
+Follow-up risk / notes:
+- README intentionally calls out that `backend/` and `frontend/` are *not yet scaffolded* (TASK-006 / TASK-013). Once they exist, those qualifiers should be removed — but TASK-081 is scoped to expand this into the full runbook, so leaving the trim work for that task rather than touching README repeatedly.
+- README references `./mvnw spring-boot:run` (Maven) per architecture.md §1 ("Build tooling: Maven Wrapper for the backend") and per TASK-006/007 ("Maven Spring Boot project", "`./mvnw dependency:tree`"). The user's loop instructions reference `./gradlew -p backend` — discrepancy still unresolved (flagged since TASK-002). When TASK-006 starts, the agent must reconcile: stick with Maven (matches architecture + tasks.json) or switch to Gradle (matches loop instructions). Recommend Maven to stay consistent with the source-of-truth tasks.
+- Cookie defaults / production hardening notes deferred to TASK-081's full runbook.
+- Next pending task: TASK-006 (scaffold the Spring Boot backend project) — this is where the Maven-vs-Gradle decision must be made.
+
