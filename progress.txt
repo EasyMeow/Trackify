@@ -1099,3 +1099,34 @@ Follow-up risk / notes:
 - **TASK-076 (authorization checks) will add `findByWorkspaceIdAndUserId`** returning the membership with its role — same note as TASK-033's progress already flagged. Bootstrap doesn't need it (creation always uses `OWNER`), but every workspace-scoped read endpoint will.
 - **No frontend work.** The `modules/workspace` frontend module is still empty; TASK-036 is the next frontend touchpoint and TASK-035 must land first to give it a real endpoint to call.
 - **Next pending task: TASK-035** (`GET /api/workspaces`). Will consume `WorkspaceMemberRepository.findAllByUserId` directly and is the natural complement to TASK-034's writes — together they form the read-write loop for workspace list state.
+
+
+================================================================================
+TASK-035 — Implement GET /api/workspaces
+Date: 2026-04-27
+================================================================================
+
+What changed:
+- `backend/src/main/java/com/trackify/workspace/dto/WorkspaceResponse.java` (new): record with `id`, `name`, `slug`. Minimal — only fields the workspace-selector UI needs. `ownerId`/timestamps intentionally excluded (no premature surface area).
+- `backend/src/main/java/com/trackify/workspace/application/WorkspaceQueryService.java` (new): `@Service` with one `@Transactional(readOnly = true)` method `listForUser(UUID userId)`. Two-step lookup: `findAllByUserId` → collect workspace IDs → `findAllById` → sort by name → map to `WorkspaceResponse`. Chose two-step over a JPQL join because both repositories are in the same module and the in-memory join is trivially correct for the expected cardinality (1–10 workspaces per user). A JPQL join would require either a `@ManyToOne` JPA association (breaks the module boundary) or a native/JPQL cross-entity query on unrelated root entities (verbose, fragile). No new repository method added — `findAllById` is from `JpaRepository`.
+- `backend/src/main/java/com/trackify/workspace/controller/WorkspaceController.java` (new): thin `@RestController` at `/api/workspaces` with one `@GetMapping`. Extracts `principal.userId()` from `@AuthenticationPrincipal LocalUserPrincipal`, delegates to `WorkspaceQueryService.listForUser`. No business logic. No `@Transactional`. Security covered by the existing catch-all `.requestMatchers("/api/**").authenticated()` in `SecurityConfig` — no security chain change needed or made.
+- `backend/src/test/java/com/trackify/workspace/controller/WorkspaceControllerTest.java` (new): `@WebMvcTest` slice over `WorkspaceController`, same `@Import` pattern as `MeControllerTest`. Four test methods:
+  1. `authenticatedUserReceivesTheirOwnWorkspaces` — stubs `listForUser(aliceId)` to return 2 workspaces, asserts HTTP 200 and exact JSON shape (id, name, slug for each element, length == 2).
+  2. `otherUsersWorkspacesAreNotVisible` — stubs both `listForUser(aliceId)` and `listForUser(bobId)` to different lists; Alice's request returns only Alice's workspace, proving isolation at the service call boundary.
+  3. `userWithNoMembershipsReceivesEmptyList` — stubs `listForUser` to return `List.of()`, asserts HTTP 200 with `length == 0`.
+  4. `unauthenticatedRequestIsRejectedWith401BeforeControllerRuns` — no auth context, Spring Security intercepts before controller runs, asserts HTTP 401.
+- Marked TASK-035 status = done in tasks.json.
+
+What was tested:
+- `./mvnw compile test-compile` from `backend/` → BUILD SUCCESS, 72 source files compiled (was 69 + 3 new), 10 test-compile files.
+- `./mvnw test` from `backend/` → Tests run: 25, Failures: 0, Errors: 0, Skipped: 0, BUILD SUCCESS. Was 21 tests before — 4 new test methods added, all green.
+
+Design choices:
+- Two-step lookup (not JPQL join): see `WorkspaceQueryService` note above. Simpler, correct, no cross-module coupling.
+- Sorting by name alphabetically in the service: consistent ordering without depending on DB insertion order. Stable for the UI's workspace switcher.
+- Principal resolved via `@AuthenticationPrincipal LocalUserPrincipal` — same pattern as `MeController`. No extra resolver, no reflection.
+- Security chain NOT modified. `/api/workspaces` falls under the existing `/api/**` authenticated matcher.
+
+Follow-up risk / notes:
+- The `WorkspaceResponse` DTO does not expose the user's role in that workspace. TASK-076 (authz checks) will need role information; it should add a separate query path rather than expanding `WorkspaceResponse` (keep the list response lean, add a detail/membership endpoint later).
+- Next pending task: TASK-036 (frontend workspace query and types). TASK-035 provides the endpoint TASK-036 will call.
