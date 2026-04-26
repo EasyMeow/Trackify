@@ -1,6 +1,7 @@
 package com.trackify.project.application;
 
 import com.trackify.common.exception.ForbiddenException;
+import com.trackify.common.exception.NotFoundException;
 import com.trackify.project.domain.Project;
 import com.trackify.project.dto.ProjectResponse;
 import com.trackify.project.infrastructure.ProjectRepository;
@@ -53,6 +54,31 @@ public class ProjectQueryService {
                 .sorted(Comparator.comparing(Project::getName))
                 .map(ProjectQueryService::toResponse)
                 .toList();
+    }
+
+    /**
+     * Returns a single project the caller's workspace membership allows them to see.
+     *
+     * <p>Authorization semantics deliberately differ from
+     * {@link #listForWorkspace(UUID, UUID)}: the URL is project-keyed, so a
+     * missing project row must surface as 404 rather than being collapsed into 403.
+     *
+     * @param projectId target project UUID
+     * @param userId    authenticated user's UUID
+     * @return the project as a response DTO
+     * @throws NotFoundException  if no project row with that id exists
+     * @throws ForbiddenException if the caller is not a member of the project's workspace
+     */
+    @Transactional(readOnly = true)
+    public ProjectResponse getById(UUID projectId, UUID userId) {
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new NotFoundException("Project not found"));
+
+        if (!workspaceMemberRepository.existsByWorkspaceIdAndUserId(project.getWorkspaceId(), userId)) {
+            throw new ForbiddenException("Project not accessible");
+        }
+
+        return toResponse(project);
     }
 
     private static ProjectResponse toResponse(Project project) {
