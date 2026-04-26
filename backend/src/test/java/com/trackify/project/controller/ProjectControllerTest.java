@@ -1,17 +1,24 @@
 package com.trackify.project.controller;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trackify.auth.application.LocalUserPrincipal;
 import com.trackify.common.exception.ForbiddenException;
 import com.trackify.config.JacksonConfig;
 import com.trackify.config.SecurityConfig;
 import com.trackify.config.WebConfig;
+import com.trackify.project.application.ProjectCreateService;
 import com.trackify.project.application.ProjectQueryService;
+import com.trackify.project.dto.ProjectCreateRequest;
 import com.trackify.project.dto.ProjectResponse;
 
 import org.junit.jupiter.api.Test;
@@ -19,6 +26,7 @@ import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.test.context.TestPropertySource;
@@ -30,15 +38,13 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * TASK-039: verifies {@code GET /api/workspaces/{workspaceId}/projects} behaviour.
+ * TASK-039 / TASK-041: verifies collection endpoints on
+ * {@code /api/workspaces/{workspaceId}/projects}.
  *
  * <ul>
- *   <li>Authorized happy path — a workspace member receives the projects in
- *       that workspace, response shaped as the {@link ProjectResponse} DTO.
- *   <li>Forbidden path — a non-member of the workspace receives HTTP 403 from
- *       the global {@code ForbiddenException} handler.
- *   <li>Unauthenticated request is rejected with 401 by Spring Security before
- *       the controller method is invoked.
+ *   <li>GET happy path, forbidden, empty list, unauthenticated (TASK-039).
+ *   <li>POST happy path (201 + Location), forbidden, validation 400,
+ *       unauthenticated 401 (TASK-041).
  * </ul>
  */
 @WebMvcTest(controllers = ProjectController.class)
@@ -54,8 +60,18 @@ class ProjectControllerTest {
     @Autowired
     private MockMvc mockMvc;
 
+    @Autowired
+    private ObjectMapper objectMapper;
+
     @MockitoBean
     private ProjectQueryService projectQueryService;
+
+    @MockitoBean
+    private ProjectCreateService projectCreateService;
+
+    // -------------------------------------------------------------------------
+    // GET /api/workspaces/{workspaceId}/projects  (TASK-039)
+    // -------------------------------------------------------------------------
 
     @Test
     void memberReceivesProjectsForTheirWorkspace() throws Exception {
@@ -119,10 +135,105 @@ class ProjectControllerTest {
     }
 
     @Test
-    void unauthenticatedRequestIsRejectedWith401BeforeControllerRuns() throws Exception {
+    void unauthenticatedGetRequestIsRejectedWith401() throws Exception {
         UUID workspaceId = UUID.randomUUID();
         mockMvc.perform(get("/api/workspaces/{workspaceId}/projects", workspaceId))
                 .andExpect(status().isUnauthorized());
         Mockito.verifyNoInteractions(projectQueryService);
+    }
+
+    // -------------------------------------------------------------------------
+    // POST /api/workspaces/{workspaceId}/projects  (TASK-041)
+    // -------------------------------------------------------------------------
+
+    @Test
+    void memberCanCreateProject() throws Exception {
+        UUID userId = UUID.randomUUID();
+        LocalUserPrincipal principal = new LocalUserPrincipal(userId, "alice", "hashed-pw");
+        Authentication auth = new UsernamePasswordAuthenticationToken(principal, null, List.of());
+
+        UUID workspaceId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+        Instant now = Instant.parse("2026-04-27T08:00:00Z");
+
+        ProjectCreateRequest requestBody = new ProjectCreateRequest("My Project", null, "a description");
+        ProjectResponse serviceResult = new ProjectResponse(
+                projectId, workspaceId, "My Project", "my-project", "a description", now, now);
+
+        when(projectCreateService.create(eq(workspaceId), eq(userId), any(ProjectCreateRequest.class)))
+                .thenReturn(serviceResult);
+
+        mockMvc.perform(post("/api/workspaces/{workspaceId}/projects", workspaceId)
+                        .with(authentication(auth))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(requestBody)))
+                .andExpect(status().isCreated())
+                .andExpect(header().string("Location",
+                        org.hamcrest.Matchers.containsString("/api/workspaces/" + workspaceId + "/projects/" + projectId)))
+                .andExpect(jsonPath("$.id").value(projectId.toString()))
+                .andExpect(jsonPath("$.workspaceId").value(workspaceId.toString()))
+                .andExpect(jsonPath("$.name").value("My Project"))
+                .andExpect(jsonPath("$.slug").value("my-project"))
+                .andExpect(jsonPath("$.description").value("a description"));
+
+        Mockito.verify(projectCreateService).create(eq(workspaceId), eq(userId), any(ProjectCreateRequest.class));
+    }
+
+    @Test
+    void nonMemberCannotCreateProject() throws Exception {
+        UUID userId = UUID.randomUUID();
+        LocalUserPrincipal principal = new LocalUserPrincipal(userId, "bob", "hashed-pw");
+        Authentication auth = new UsernamePasswordAuthenticationToken(principal, null, List.of());
+
+        UUID workspaceId = UUID.randomUUID();
+        ProjectCreateRequest requestBody = new ProjectCreateRequest("Sneaky Project", null, null);
+
+        when(projectCreateService.create(eq(workspaceId), eq(userId), any(ProjectCreateRequest.class)))
+                .thenThrow(new ForbiddenException("Workspace not accessible"));
+
+        mockMvc.perform(post("/api/workspaces/{workspaceId}/projects", workspaceId)
+                        .with(authentication(auth))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(requestBody)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403))
+                .andExpect(jsonPath("$.error").value("FORBIDDEN"))
+                .andExpect(jsonPath("$.message").value("Workspace not accessible"));
+    }
+
+    @Test
+    void blankNameIsRejectedWith400() throws Exception {
+        UUID userId = UUID.randomUUID();
+        LocalUserPrincipal principal = new LocalUserPrincipal(userId, "alice", "hashed-pw");
+        Authentication auth = new UsernamePasswordAuthenticationToken(principal, null, List.of());
+
+        UUID workspaceId = UUID.randomUUID();
+        // name is blank — should fail @NotBlank
+        String badBody = """
+                {"name":"  ","slug":null,"description":null}
+                """;
+
+        mockMvc.perform(post("/api/workspaces/{workspaceId}/projects", workspaceId)
+                        .with(authentication(auth))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(badBody))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.error").value("VALIDATION_FAILED"));
+
+        Mockito.verifyNoInteractions(projectCreateService);
+    }
+
+    @Test
+    void unauthenticatedPostRequestIsRejectedWith401() throws Exception {
+        UUID workspaceId = UUID.randomUUID();
+        String body = """
+                {"name":"Some Project","slug":null,"description":null}
+                """;
+        mockMvc.perform(post("/api/workspaces/{workspaceId}/projects", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isUnauthorized());
+        Mockito.verifyNoInteractions(projectCreateService);
     }
 }

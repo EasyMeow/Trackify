@@ -1309,3 +1309,35 @@ Follow-up risk / notes:
 - Did NOT modify `SecurityConfig`, `WebConfig`, or `JacksonConfig`. The new endpoint slots into the existing rules without any infra change.
 - Did NOT touch `ProjectController`, `ProjectControllerTest`, or `ProjectResponse`. All TASK-039 behavior remains exactly as it was — additive changes only.
 - Next pending task: TASK-041 (`POST /api/workspaces/{workspaceId}/projects`). It will be the first project-write endpoint, and the first time the project module needs a slug-uniqueness rule. The existing `ProjectQueryService.listForWorkspace` membership-gate pattern is the natural template for the create command's pre-check; the create itself will need a new `ProjectCommandService` (or `ProjectService`) keeping the read/write split clean.
+
+TASK-041 — Implement POST /api/workspaces/{workspaceId}/projects
+Date: 2026-04-27
+================================================================================
+
+What changed:
+- backend/src/main/java/com/trackify/common/exception/ConflictException.java (new): thin RuntimeException subclass mapped to HTTP 409 by GlobalExceptionHandler. Created because the DB has UNIQUE(workspace_id, slug) on projects; without a pre-check a slug collision surfaces as a raw 500 from JPA/JDBC. Same shape as ForbiddenException.
+- backend/src/main/java/com/trackify/common/exception/GlobalExceptionHandler.java: added @ExceptionHandler(ConflictException.class) handler returning ApiError with status:409, error:"CONFLICT". Inserted between handleForbidden and handleValidation.
+- backend/src/main/java/com/trackify/project/dto/ProjectCreateRequest.java (new): record with @NotBlank @Size(max=255) on name, @Size(max=255) on slug (optional — null means service derives from name), @Size(max=2000) on description. Validation errors flow through existing GlobalExceptionHandler.handleValidation -> 400 VALIDATION_FAILED.
+- backend/src/main/java/com/trackify/project/application/ProjectCreateService.java (new): @Service with @Transactional create(workspaceId, userId, request). Checks workspace membership (-> 403). Derives slug from name when client omits it (lowercase, whitespace->hyphens, strip non-alphanumeric/hyphen). Pre-checks existsByWorkspaceIdAndSlug (-> 409 if collision). Saves Project, maps to ProjectResponse. Package-private static deriveSlug() is separately testable.
+- backend/src/main/java/com/trackify/project/controller/ProjectController.java: injected ProjectCreateService (second constructor arg); added @PostMapping createProject returning ResponseEntity<ProjectResponse> with status 201 and Location header built via ServletUriComponentsBuilder.
+- backend/src/test/java/com/trackify/project/controller/ProjectControllerTest.java: added @MockitoBean ProjectCreateService; added 4 new test methods: memberCanCreateProject (201 + Location + body + verify service invoked), nonMemberCannotCreateProject (403), blankNameIsRejectedWith400 (400 VALIDATION_FAILED + verifyNoInteractions), unauthenticatedPostRequestIsRejectedWith401 (401 + verifyNoInteractions). Injected ObjectMapper via @Autowired for serializing request bodies.
+- Marked TASK-041 status = done in tasks.json.
+
+What was tested:
+- cd backend && ./mvnw compile test-compile -> BUILD SUCCESS, 85 source files + 12 test files.
+- cd backend && ./mvnw test -> Tests run: 37, Failures: 0, Errors: 0, Skipped: 0, BUILD SUCCESS. Was 33 before; +4 new POST tests. All 33 previous tests unchanged.
+
+Design choices:
+- Service split: separate ProjectCreateService rather than adding create() to ProjectQueryService. A QueryService that mutates state is semantically misleading; matches UserRegistrationService precedent in auth module (dedicated write service alongside the read service).
+- Slug strategy: client-supplied slug is optional; service derives from name when absent (deterministic: lowercase + hyphens). Client can override. Slug uniqueness enforced per-workspace (matches DB UNIQUE constraint). Pre-check existsByWorkspaceIdAndSlug -> 409 ConflictException before insert, avoiding DataIntegrityViolation 500. Race condition (two concurrent POSTs same slug) is acceptable for MVP; TASK-076 can add retry.
+- Response: 201 Created with Location header and full ProjectResponse body. Reused ProjectResponse — no ProjectCreatedResponse variant since shape is identical to list/get.
+- Forbidden for non-member: 403 ForbiddenException("Workspace not accessible"). Same gate as listForWorkspace.
+- ConflictException is genuinely new: without it a slug collision surfaces as opaque 500, which is user-hostile and leaks internal errors. Satisfies the "genuinely need one" bar.
+- No ProjectMember auto-insertion: V5 has project_members table but architecture.md does not specify auto-adding the creator on project create. Deferred to later task.
+
+Follow-up risk / notes:
+- TASK-042 (frontend project creation form) can now POST to /api/workspaces/{workspaceId}/projects with name, optional slug, optional description and expect 201 + ProjectResponse.
+- TASK-045 (board-column auto-creation) should hook into ProjectCreateService or a domain event — not bypass task application services.
+- TASK-076: the existsByWorkspaceIdAndSlug pre-check + save pair is not atomic. Mitigation: catch DataIntegrityViolationException in ProjectCreateService and re-throw as ConflictException. Self-contained change inside that service.
+- GlobalExceptionHandlerTest does not yet cover ConflictException -> 409. The ProjectControllerTest does not exercise this path either (keeping scope minimal per task). Deferred.
+- Did NOT modify SecurityConfig, ProjectByIdController, ProjectByIdControllerTest, or any Flyway migration.
