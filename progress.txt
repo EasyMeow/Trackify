@@ -876,3 +876,39 @@ Follow-up risk / notes:
 - **OAuth2 integration (future)**: if/when Google OAuth2 lands, a `SecurityContext` may hold an `OidcUser` principal, not a `LocalUserPrincipal`. The `@AuthenticationPrincipal LocalUserPrincipal` parameter will receive `null`. Add a null-check and delegate to a second lookup path (e.g., find user by OAuth2 subject) before that feature ships.
 - **No DB / migration changes**: pure service + controller code. V1, V2, V3 unchanged.
 - **No frontend changes**: `/api/me` is consumed by TASK-030/031.
+
+================================================================================
+TASK-029: implement POST /api/logout
+Date: 2026-04-26
+================================================================================
+
+What changed:
+- Added `LogoutController` (`com.trackify.auth.controller.LogoutController`) exposing `POST /api/logout`. Reads the current session via `request.getSession(false)`; if present, calls `session.invalidate()` so Spring Session JDBC drops the row in `SPRING_SESSION` / `SPRING_SESSION_ATTRIBUTES`. Then clears `SecurityContextHolder` for the in-flight request and returns `200` with `{ "success": true }`.
+- Added `LogoutResponse` record in `com.trackify.auth.dto`, mirroring the minimal shape of `LoginResponse`.
+
+Path placement:
+- `/api/logout` is **not** under `/api/auth/**`. It falls under the catch-all `.requestMatchers("/api/**").authenticated()` rule in `SecurityConfig`, so unauthenticated callers get a 401 from `HttpStatusEntryPoint` before the controller method runs. This matches architecture.md §11 verbatim.
+- `SecurityConfig` is unchanged. The Spring Security `.logout(...)` DSL stays disabled via the existing `.logout(AbstractHttpConfigurer::disable)` line. One logout path = one thing to reason about.
+
+What was tested:
+- `LogoutControllerTest` (slice test, mirrors `MeControllerTest`):
+  - `authenticatedLogoutInvalidatesSessionAndClearsSecurityContext`: pre-seeds a `MockHttpSession` with a `SecurityContext` under `HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY` and authenticates the request via the `authentication(auth)` post-processor; asserts 200, body `$.success == true`, and `session.isInvalid() == true`.
+  - `unauthenticatedLogoutReturns401`: no auth, asserts 401 from the security filter chain before the controller runs.
+- Commands run from `backend/`:
+  - `./mvnw test -Dtest=LogoutControllerTest` -> 2/2 pass.
+  - `./mvnw test` (full suite) -> 17/17 pass. No regressions in `LoginControllerTest`, `MeControllerTest`, `UserRegistrationServiceTest`, `HealthControllerTest`, `GlobalExceptionHandlerTest`, `AuthSecurityIntegrationTest`, `TrackifyApplicationTests`.
+- I did not run a manual end-to-end logout against a live Postgres + Spring Session JDBC stack. Session invalidation is verified at the contract level only, which matches how TASK-027/028 covered their session interactions and satisfies the `test_steps` in TASK-029.
+
+Decisions / trade-offs:
+- **Controller endpoint vs. Spring Security `.logout(...)` DSL.** The login flow is already a plain controller (TASK-027). A controller-based logout keeps the pair symmetric, sidesteps the DSL's redirect-oriented defaults (which target server-rendered apps, not SPAs), and is easier to slice-test than asserting against `LogoutFilter` post-handlers. The DSL stays disabled in `SecurityConfig`, so there is exactly one logout path.
+- **JSON body instead of `204 No Content`.** Mirrors `LoginResponse` shape so the SPA's `httpClient.ts` can treat both auth endpoints uniformly. Trivial to extend later (e.g., `nextUrl`) without breaking the contract.
+- **No idempotent unauthenticated logout.** Returning 200 for an unauthenticated logout would carve a magic exception into the `/api/**` authentication wall. The SPA bootstraps its session knowledge from `/api/me`; a 401 on logout-without-session is the right signal to clear local auth state and redirect to `/sign-in`.
+- **`SecurityContextHolder.clearContext()` is belt-and-suspenders.** `HttpSessionSecurityContextRepository` already clears the request-scoped context on each request, but matching the canonical `SecurityContextLogoutHandler` behaviour protects any custom filter / interceptor that re-reads the holder later in this request's lifecycle (e.g., audit logging).
+
+Follow-up risk:
+- **TASK-030 (frontend `AuthProvider`)** needs a `logout()` helper that calls `POST /api/logout`, then resets the TanStack Query cache and Zustand auth state. Backend is ready; nothing further here.
+- **TASK-077 (standardized 401/403/404 envelope)**: today's unauthenticated logout returns 401 with an empty body, same shape as `/api/me` (both go through `HttpStatusEntryPoint`). Once TASK-077 installs an `ApiError`-shaped entry point, this endpoint inherits the new shape for free.
+- **CSRF**: `csrf.disable()` is still global. If we ever re-enable CSRF for cookie-auth defence-in-depth, this endpoint will need to be on the CSRF token check list. Worth flagging in the task that re-enables CSRF.
+- **Session cookie cleanup**: the controller does not emit `Set-Cookie: SESSION=; Max-Age=0` to actively expire the cookie on the client. The server-side row is already gone, so any subsequent request with that cookie is anonymous — technically correct but slightly wasteful. Add `Set-Cookie` clearing later if it ever matters.
+- **No DB / migration changes**: pure controller code. V1/V2/V3 unchanged.
+- **No frontend changes**: SPA wiring lands in TASK-030/031/032.
