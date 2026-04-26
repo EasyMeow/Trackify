@@ -25,3 +25,20 @@ Follow-up risk / notes:
 - Indent_style/size declared in both `[*]` and language-specific blocks; harmless duplication but kept to make per-language intent explicit.
 - Architecture spec uses Maven (`./mvnw`) per TASK-006/007, but the user's loop instructions reference Gradle. When backend is scaffolded, reconcile: tasks.json says Maven, user instructions say Gradle. Flagging for future task.
 - Next pending task: TASK-003 (root `.env.example`).
+
+## 2026-04-26 — TASK-003: root .env.example
+
+What changed:
+- Created root `.env.example` with placeholder values only, organized into sections matching the architecture: Frontend (`FRONTEND_ORIGIN`, `VITE_API_BASE_URL`), Backend (`SPRING_PROFILES_ACTIVE`, `SERVER_PORT`), PostgreSQL (`POSTGRES_*`, `SPRING_DATASOURCE_*`), Session (`SPRING_SESSION_STORE_TYPE=jdbc`, cookie name/HttpOnly/Secure/SameSite, `SERVER_SERVLET_SESSION_TIMEOUT`), and Auth (`AUTH_PASSWORD_ENCODER_STRENGTH`, `AUTH_PASSWORD_MIN_LENGTH`, optional `AUTH_BOOTSTRAP_ADMIN_*`).
+- Marked TASK-003 status = done in tasks.json.
+
+What was tested:
+- Per task spec: opened `.env.example` and confirmed every architecture-driven variable is present with placeholder values only.
+- Ran `git check-ignore -v .env .env.local .env.example` and confirmed `.env`/`.env.*` are ignored while `.env.example` is explicitly NOT ignored (matches `!.env.example` rule at line 27 of `.gitignore`).
+
+Follow-up risk / notes:
+- `SPRING_DATASOURCE_*` duplicates `POSTGRES_*` values; left both because Spring Boot reads `SPRING_DATASOURCE_*` directly while `POSTGRES_*` are useful for `docker-compose.yml` (TASK-004) and shell-level Postgres tooling. Consider trimming once compose is in place if duplication causes drift.
+- `AUTH_BOOTSTRAP_ADMIN_*` placeholders are speculative — they back the `auth.bootstrap` properties class hinted at in TASK-025/026. If that path doesn't materialize, drop those keys.
+- Cookie defaults are tuned for local dev (`SECURE=false`, `SAME_SITE=lax`); README/runbook (TASK-081) should call out flipping these for production HTTPS.
+- Maven-vs-Gradle discrepancy from TASK-002 note still stands; not relevant to this task.
+- Next pending task: TASK-004 (`docker-compose.yml` for PostgreSQL).
