@@ -10,3 +10,18 @@ What was tested:
 Follow-up risk / notes:
 - Repo had no commits yet; this commit (TASK-001) becomes the initial commit and includes pre-existing untracked files (architecture.md, tasks.json, ralph.sh, .mcp.json, .claude/). Those are scaffolding for the agent loop and are intentionally not ignored.
 - Next pending task: TASK-002 (root `.editorconfig`).
+
+## 2026-04-26 — TASK-002: root .editorconfig
+
+What changed:
+- Created root `.editorconfig` with `root = true`, UTF-8, LF, final newline, trim trailing whitespace defaults, plus per-language sections: TS/JS/JSON/CSS/HTML at 2 spaces, Java at 4 spaces, YAML at 2 spaces, Markdown at 2 spaces with `trim_trailing_whitespace = false` (markdown trailing-space line breaks), and a `Makefile` tab section.
+- Marked TASK-002 status = done in tasks.json.
+
+What was tested:
+- Per task spec: opened `.editorconfig` and confirmed sections are present and valid (root=true, [*], TS/JS, Java, YAML, Markdown).
+- Backend not yet initialized (no `backend/gradlew`), so skipped the gradle compile/test step per user instructions.
+
+Follow-up risk / notes:
+- Indent_style/size declared in both `[*]` and language-specific blocks; harmless duplication but kept to make per-language intent explicit.
+- Architecture spec uses Maven (`./mvnw`) per TASK-006/007, but the user's loop instructions reference Gradle. When backend is scaffolded, reconcile: tasks.json says Maven, user instructions say Gradle. Flagging for future task.
+- Next pending task: TASK-003 (root `.env.example`).
