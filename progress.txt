@@ -42,3 +42,25 @@ Follow-up risk / notes:
 - Cookie defaults are tuned for local dev (`SECURE=false`, `SAME_SITE=lax`); README/runbook (TASK-081) should call out flipping these for production HTTPS.
 - Maven-vs-Gradle discrepancy from TASK-002 note still stands; not relevant to this task.
 - Next pending task: TASK-004 (`docker-compose.yml` for PostgreSQL).
+
+## 2026-04-26 — TASK-004: docker-compose.yml for PostgreSQL
+
+What changed:
+- Added root `docker-compose.yml` with a single `db` service running `postgres:16-alpine`, container name `trackify-db`, named volume `trackify-db-data`, and a `pg_isready` health check (5s interval, 10 retries, 10s start_period).
+- All env values default-pulled from `.env.example`: `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_PORT`. Defaults baked in via `${VAR:-default}` so the file works even without a local `.env`.
+- Marked TASK-004 status = done in tasks.json.
+
+What was tested:
+- `docker compose config --quiet` — passed (valid syntax).
+- `docker compose up -d db` — pulled `postgres:16-alpine`, created network/volume/container, started successfully.
+- `docker compose ps` — container `trackify-db` reported `Up 8 seconds (healthy)`, port `5432:5432` exposed.
+- `docker compose down` — cleanly stopped and removed the container/network. Volume `trackify-db-data` is intentionally retained (named volume) so dev data survives `down`/`up` cycles.
+
+Follow-up risk / notes:
+- Service name is `db` (matches `docker compose up -d db` from the task spec). Backend `SPRING_DATASOURCE_URL` in `.env.example` still hardcodes `localhost:5432`, which is correct when backend runs on host. If backend ever runs inside compose, host needs to flip to `db`.
+- No Spring Session schema initialization here — Flyway will own that (TASK-023). Postgres image's default initdb only creates the empty `trackify` database.
+- Volume name pinned (`name: trackify-db-data`) to avoid project-prefix surprises (e.g. `trackify_trackify-db-data`). To wipe local data: `docker compose down -v`.
+- Compose file uses no `version:` key (deprecated in Compose v2). If tooling on another machine still requires it, add `version: "3.9"` at the top.
+- Maven-vs-Gradle note from TASK-002 still pending — relevant once TASK-006 starts.
+- Next pending task: TASK-005 (root `README.md` bootstrap notes).
+

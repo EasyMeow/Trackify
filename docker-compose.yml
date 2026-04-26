@@ -1,0 +1,30 @@
+# Local infrastructure for Trackify development.
+# Brings up PostgreSQL for both business data and Spring Session storage.
+# Values default to those in `.env.example`; override by exporting env vars
+# or by placing a `.env` file next to this compose file.
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: trackify-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-trackify}
+      POSTGRES_USER: ${POSTGRES_USER:-trackify}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - trackify-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "${POSTGRES_USER:-trackify}" -d "${POSTGRES_DB:-trackify}"
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  trackify-db-data:
+    name: trackify-db-data
