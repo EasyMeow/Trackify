@@ -653,3 +653,32 @@ Follow-up risk / notes:
 - **No `UserService`, no registration DTO, no Spring Security wiring**: those are TASK-026 and TASK-027. This task deliberately stops at the persistence layer.
 - **`existsByLogin` / `existsByEmail`**: Spring Data derives these as `SELECT count(*) > 0 FROM users WHERE login = ?` — efficient, no entity hydration. Added now because they are the cheapest way for the registration service to reject duplicates before attempting an insert, avoiding a round-trip on constraint violation.
 - **Reviewer note**: the lifecycle-hook fix was applied after a code-review pass flagged the original null-timestamp insert bug. Final compile + test run was re-executed after the fix; both succeeded. This is the kind of subtle JPA pitfall worth remembering — `@Column(nullable=false)` plus a NOT NULL DB column plus a DB DEFAULT does **not** automatically defer to the default when the entity field is null. Either set the field in code (constructor, lifecycle hook, or auditing) or set `insertable=false` on the column to force Hibernate to omit it from the INSERT.
+
+
+================================================================================
+TASK-023 — Add Spring Session JDBC tables and config
+Date: 2026-04-26
+================================================================================
+
+What changed:
+- `backend/src/main/resources/db/migration/V3__spring_session.sql`: new Flyway migration. DDL copied verbatim from the official `spring-session-jdbc-3.4.1.jar` resource at `org/springframework/session/jdbc/schema-postgresql.sql`. Creates `SPRING_SESSION` (7 columns, PK `SPRING_SESSION_PK`, three indexes `SPRING_SESSION_IX1` through `SPRING_SESSION_IX3`) and `SPRING_SESSION_ATTRIBUTES` (`BYTEA` attribute column, composite PK, FK with `ON DELETE CASCADE` back to `SPRING_SESSION`).
+- `backend/src/main/resources/application.yml`: no changes needed. Already had `spring.session.store-type: ${SPRING_SESSION_STORE_TYPE:jdbc}` and `spring.session.jdbc.initialize-schema: never` and `spring.session.jdbc.table-name: SPRING_SESSION`. Config was already correct.
+- No new Java configuration class added. Spring Boot auto-configuration wires `JdbcIndexedSessionRepository` from the `spring-session-jdbc` dependency + the two `application.yml` properties — no `@EnableJdbcHttpSession` required.
+
+What was tested:
+- `./mvnw -q compile` and `./mvnw -q test-compile`: both exit 0 (no output = success).
+- `./mvnw test`: BUILD SUCCESS, 4/4 tests pass (`HealthControllerTest` x1, `GlobalExceptionHandlerTest` x3). No regressions.
+- App boot with Flyway: `./mvnw spring-boot:run` (background). Log line confirmed: `Migrating schema "public" to version "3 - spring session"`. App reached `Started TrackifyApplication in 1.503 seconds`.
+- `docker exec trackify-db psql -U trackify -d trackify -c "\dt spring_session*"` returned both `spring_session` and `spring_session_attributes` in the `public` schema owned by `trackify`.
+- `\d spring_session` confirmed: 7 columns (`primary_id CHAR(36)`, `session_id CHAR(36)`, `creation_time BIGINT`, `last_access_time BIGINT`, `max_inactive_interval INT`, `expiry_time BIGINT`, `principal_name VARCHAR(100)`); PK `spring_session_pk`; unique index `spring_session_ix1` on `session_id`; plain indexes `spring_session_ix2` (expiry_time) and `spring_session_ix3` (principal_name).
+
+Design choices and trade-offs:
+- **Migration-copy approach (not `initialize-schema: always`)**: keeps Flyway as the single schema authority. Splitting schema ownership between Flyway and Spring Session's built-in initializer creates ordering ambiguity (which runs first?) and would silently re-create tables after a volume wipe if Flyway runs first but Spring Session doesn't see its tables yet. One migration, one owner.
+- **DDL verbatim from the jar**: avoids drift. If the Spring Session version ever bumps and the schema changes, the diff between V3 and a future V4 migration will be explicit and reviewed. Stripping the top-level comment block from the source file is harmless — the DDL is byte-for-byte identical.
+- **No `@EnableJdbcHttpSession`**: Spring Boot auto-config (`SpringSessionJdbcAutoConfiguration`) activates when `spring-session-jdbc` is on the classpath and `spring.session.store-type=jdbc` is set. Adding `@EnableJdbcHttpSession` would override the auto-config and require manual property wiring — more code, same outcome, worse.
+- **`SPRING_SESSION` (uppercase table name)**: `application.yml` already had `spring.session.jdbc.table-name: SPRING_SESSION` matching the DDL. Postgres folds unquoted identifiers to lowercase so both `SPRING_SESSION` and `spring_session` resolve to the same table; the explicit property aligns Spring Session's SQL generator with the migration's intent.
+
+Follow-up risk / notes:
+- **TASK-024 (Spring Security filter chain)**: this is the next pending task. It will add `SecurityFilterChain`, permit `/api/health`, require auth on all other endpoints, and wire the session cookie settings already present in `application.yml`. The session tables are now ready — Spring Session will start persisting sessions the moment a login endpoint exists and sets a session attribute. Risk: if the Security config doesn't explicitly set `sessionManagement().sessionCreationPolicy(IF_REQUIRED)` (or the default), Spring Session may try to create session rows on every request including the health check. Recommend permitting `/api/health` without a session.
+- **Cookie `secure: true` in local dev**: `application.yml` sets `SERVER_SERVLET_SESSION_COOKIE_SECURE=true` by default. HTTPS is required for the browser to send a `Secure` cookie. Local dev typically runs HTTP on `:8080`/`:5173`. The `.env.example` should set `SERVER_SERVLET_SESSION_COOKIE_SECURE=false` for local profile; TASK-024 or the environment setup task should verify this doesn't block local login testing.
+- **No V1/V2 modifications**: both prior migrations are untouched. Flyway history in `trackify-db` now has rows for versions 1, 2, and 3 all with `success=t`.
