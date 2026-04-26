@@ -1,27 +1,104 @@
+import { useSearchParams } from 'react-router-dom';
 import { useWorkspaces } from '../modules/workspace/hooks/useWorkspaces';
+import { useProjects } from '../modules/project/hooks/useProjects';
+import type { Project } from '../modules/project/types/project';
+
+const pageStyle = {
+  display: 'flex',
+  flexDirection: 'column' as const,
+  gap: 'var(--space-4)',
+  padding: 'var(--space-6)',
+};
+
+const mutedTextStyle = {
+  color: 'var(--color-text-muted)',
+  margin: 0,
+};
+
+const gridStyle = {
+  display: 'grid',
+  gap: 'var(--space-3)',
+  gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+};
+
+const cardStyle = {
+  display: 'flex',
+  flexDirection: 'column' as const,
+  gap: 'var(--space-2)',
+  padding: 'var(--space-4)',
+  backgroundColor: 'var(--color-surface)',
+  border: '1px solid var(--color-border)',
+  borderRadius: 'var(--radius-lg)',
+  boxShadow: 'var(--shadow-xs)',
+};
+
+const cardTitleStyle = {
+  fontSize: 'var(--font-size-md)',
+  fontWeight: 'var(--font-weight-semibold)',
+  color: 'var(--color-text)',
+  margin: 0,
+};
+
+const cardSlugStyle = {
+  fontSize: 'var(--font-size-xs)',
+  color: 'var(--color-text-subtle)',
+  margin: 0,
+};
+
+const cardDescriptionStyle = {
+  fontSize: 'var(--font-size-sm)',
+  color: 'var(--color-text-muted)',
+  margin: 0,
+};
 
 export default function DashboardPage() {
-  const { data: workspaces, isLoading } = useWorkspaces();
+  const [searchParams] = useSearchParams();
+  const { data: workspaces, isLoading: workspacesLoading } = useWorkspaces();
+
+  const urlWorkspaceId = searchParams.get('workspace');
+  const selectedWorkspaceId = workspaces?.some((workspace) => workspace.id === urlWorkspaceId)
+    ? (urlWorkspaceId as string)
+    : workspaces?.[0]?.id;
+
+  const {
+    data: projects,
+    isLoading: projectsLoading,
+    isError: projectsError,
+  } = useProjects(selectedWorkspaceId);
 
   return (
-    <section
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 'var(--space-2)',
-        padding: 'var(--space-6)',
-      }}
-    >
+    <section style={pageStyle}>
       <h1>Dashboard</h1>
-      <p style={{ color: 'var(--color-text-muted)' }}>
-        Project list and create-project flow land in TASK-042 and TASK-043.
-      </p>
-      {isLoading && <p style={{ color: 'var(--color-text-muted)' }}>Loading workspaces…</p>}
-      {workspaces && (
-        <p style={{ color: 'var(--color-text-muted)' }}>
-          {workspaces.length} workspace{workspaces.length !== 1 ? 's' : ''}
-        </p>
+      {workspacesLoading && <p style={mutedTextStyle}>Loading workspaces…</p>}
+      {!workspacesLoading && !selectedWorkspaceId && (
+        <p style={mutedTextStyle}>No workspace selected.</p>
+      )}
+      {selectedWorkspaceId && projectsLoading && (
+        <p style={mutedTextStyle}>Loading projects…</p>
+      )}
+      {selectedWorkspaceId && projectsError && (
+        <p style={mutedTextStyle}>Could not load projects.</p>
+      )}
+      {selectedWorkspaceId && projects && projects.length === 0 && (
+        <p style={mutedTextStyle}>No projects yet. Project creation lands in TASK-043.</p>
+      )}
+      {selectedWorkspaceId && projects && projects.length > 0 && (
+        <ul style={{ ...gridStyle, listStyle: 'none', margin: 0, padding: 0 }}>
+          {projects.map((project) => (
+            <ProjectCard key={project.id} project={project} />
+          ))}
+        </ul>
       )}
     </section>
+  );
+}
+
+function ProjectCard({ project }: { project: Project }) {
+  return (
+    <li style={cardStyle}>
+      <h2 style={cardTitleStyle}>{project.name}</h2>
+      <p style={cardSlugStyle}>{project.slug}</p>
+      {project.description && <p style={cardDescriptionStyle}>{project.description}</p>}
+    </li>
   );
 }
