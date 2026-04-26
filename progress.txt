@@ -1,0 +1,12 @@
+## 2026-04-26 — TASK-001: root .gitignore
+
+What changed:
+- Verified the existing root `.gitignore` already covers OS files, IDEs, .env/.env.* (with !.env.example), logs, Node (`node_modules/`, `dist/`, `build/`, `coverage/`, `.vite/`, `.tsbuildinfo`), Java/Maven (`target/`, `*.class`, `*.jar`, `.mvn/wrapper/maven-wrapper.jar`), Gradle (`.gradle/`), and Spring (`out/`, `HELP.md`).
+- Marked TASK-001 status = done in tasks.json.
+
+What was tested:
+- Created temp `frontend/node_modules`, `backend/target`, `.env` paths and ran `git check-ignore -v frontend/node_modules backend/target .env`. All three reported matching rules at lines 38, 51, 25 of `.gitignore`. Cleaned up temp paths afterwards.
+
+Follow-up risk / notes:
+- Repo had no commits yet; this commit (TASK-001) becomes the initial commit and includes pre-existing untracked files (architecture.md, tasks.json, ralph.sh, .mcp.json, .claude/). Those are scaffolding for the agent loop and are intentionally not ignored.
+- Next pending task: TASK-002 (root `.editorconfig`).

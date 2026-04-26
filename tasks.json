@@ -1,0 +1,1573 @@
+{
+  "project": {
+    "name": "Trackify",
+    "version": "1.0",
+    "prd_source": "architecture.md",
+    "created_at": "2026-04-25"
+  },
+  "agent_instructions": {
+    "before_start": [
+      "Read this file and run `git log --oneline -20`.",
+      "Select exactly one task with status `pending` and the highest available priority whose dependencies are all `done`.",
+      "Confirm the selected task's `start_condition` is true before making code changes."
+    ],
+    "during_work": [
+      "Work only on the selected task.",
+      "Stay inside the task boundary and do not pull in later tasks while working.",
+      "Do not modify code unrelated to the current task unless it is strictly required to make the selected task pass its verification."
+    ],
+    "before_finish": [
+      "Run every step in `test_steps` for the selected task.",
+      "Change `status` to `done` only after all listed test steps succeed.",
+      "Write a short execution note in `progress.md` describing what changed, what was tested, and any follow-up risk.",
+      "Do not delete tasks or rewrite their scope; only update task `status`."
+    ]
+  },
+  "mvp_scope": {
+    "in_scope": [
+      "One React SPA in `frontend/`.",
+      "One Spring Boot app in `backend/`.",
+      "PostgreSQL for business data and server sessions.",
+      "Login/password authentication via Spring Security.",
+      "Personal workspace auto-created on first login.",
+      "Projects belong to a workspace.",
+      "One Kanban board per project with default columns.",
+      "One Gantt timeline per project backed by the same tasks as the board.",
+      "Tasks support title, description, status, priority, start date, and due date.",
+      "Task comments are included.",
+      "Task dependencies are included in the Gantt view."
+    ],
+    "out_of_scope": [
+      "Email invites.",
+      "Notifications.",
+      "File attachments.",
+      "Real-time collaboration.",
+      "Audit log UI.",
+      "Advanced filtering.",
+      "Multi-board per project."
+    ],
+    "recommended_libraries": {
+      "frontend": [
+        "Vite",
+        "React",
+        "TypeScript",
+        "React Router",
+        "TanStack Query",
+        "Zustand",
+        "@dnd-kit",
+        "gantt-task-react",
+        "date-fns"
+      ],
+      "backend": [
+        "Spring Boot",
+        "Spring Web",
+        "Spring Validation",
+        "Spring Security",
+        "Spring Data JPA",
+        "Flyway",
+        "Spring Session JDBC",
+        "PostgreSQL driver"
+      ],
+      "testing": [
+        "JUnit 5",
+        "Spring Boot Test",
+        "Manual browser verification for frontend tasks unless a task explicitly requires an automated test"
+      ]
+    }
+  },
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "phase": "Repository foundation",
+      "category": "infrastructure",
+      "priority": "critical",
+      "description": "Add root `.gitignore`.",
+      "start_condition": "The repo has no committed ignore rules for Node, Java, env, or build output.",
+      "acceptance_criteria": [
+        "A root `.gitignore` exists and covers Node modules, Maven `target/` output, IDE files, logs, and `.env` files."
+      ],
+      "test_steps": [
+        "Run `git check-ignore -v frontend/node_modules backend/target .env` and confirm matching ignore rules are reported once those paths exist."
+      ],
+      "dependencies": [],
+      "status": "done"
+    },
+    {
+      "id": "TASK-002",
+      "phase": "Repository foundation",
+      "category": "infrastructure",
+      "priority": "critical",
+      "description": "Add root `.editorconfig`.",
+      "start_condition": "There is no shared formatting baseline across frontend and backend files.",
+      "acceptance_criteria": [
+        "A root `.editorconfig` exists with UTF-8, LF, final newline, and sensible indent rules for TypeScript, Java, YAML, and Markdown."
+      ],
+      "test_steps": [
+        "Open `.editorconfig` and confirm the sections exist and are valid."
+      ],
+      "dependencies": [
+        "TASK-001"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-003",
+      "phase": "Repository foundation",
+      "category": "infrastructure",
+      "priority": "critical",
+      "description": "Add root `.env.example`.",
+      "start_condition": "There is no canonical place listing required environment variables.",
+      "acceptance_criteria": [
+        "`.env.example` lists frontend origin, backend port, PostgreSQL connection values, session settings, and auth-related placeholders with no secrets."
+      ],
+      "test_steps": [
+        "Open `.env.example` and confirm every variable needed by the architecture is present with placeholder values only."
+      ],
+      "dependencies": [
+        "TASK-002"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-004",
+      "phase": "Repository foundation",
+      "category": "infrastructure",
+      "priority": "critical",
+      "description": "Add `docker-compose.yml` for PostgreSQL.",
+      "start_condition": "Local PostgreSQL is not defined in the repo.",
+      "acceptance_criteria": [
+        "`docker-compose.yml` starts a Postgres container with a named volume and a health check."
+      ],
+      "test_steps": [
+        "Run `docker compose up -d db` and confirm it starts successfully.",
+        "Run `docker compose ps` and confirm the database container becomes healthy."
+      ],
+      "dependencies": [
+        "TASK-003"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-005",
+      "phase": "Repository foundation",
+      "category": "infrastructure",
+      "priority": "critical",
+      "description": "Add root `README.md` bootstrap notes.",
+      "start_condition": "The repo does not explain how to start local infrastructure.",
+      "acceptance_criteria": [
+        "`README.md` explains the order for starting Postgres, backend, and frontend at a high level."
+      ],
+      "test_steps": [
+        "Open `README.md` and confirm it references `docker-compose.yml`, `backend/`, and `frontend/`."
+      ],
+      "dependencies": [
+        "TASK-004"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-006",
+      "phase": "Backend bootstrap",
+      "category": "backend",
+      "priority": "critical",
+      "description": "Scaffold the Spring Boot backend project.",
+      "start_condition": "`backend/` does not exist.",
+      "acceptance_criteria": [
+        "`backend/` exists as a Maven Spring Boot project targeting Java 21 with a runnable `TrackifyApplication` and Maven wrapper scripts."
+      ],
+      "test_steps": [
+        "Run `./mvnw compile` inside `backend/` and confirm it succeeds."
+      ],
+      "dependencies": [
+        "TASK-005"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-007",
+      "phase": "Backend bootstrap",
+      "category": "backend",
+      "priority": "critical",
+      "description": "Add backend runtime dependencies.",
+      "start_condition": "The backend project exists but does not include the full runtime stack.",
+      "acceptance_criteria": [
+        "`pom.xml` includes Spring Web, Validation, Data JPA, PostgreSQL, Flyway, Spring Security, and Spring Session JDBC."
+      ],
+      "test_steps": [
+        "Run `./mvnw dependency:tree` inside `backend/` and confirm it completes successfully."
+      ],
+      "dependencies": [
+        "TASK-006"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-008",
+      "phase": "Backend bootstrap",
+      "category": "backend",
+      "priority": "critical",
+      "description": "Add backend configuration files.",
+      "start_condition": "The backend has no app configuration aligned to the architecture.",
+      "acceptance_criteria": [
+        "`application.yml` and `application-local.yml` exist with placeholders for datasource, session, auth, CORS origin, and server port."
+      ],
+      "test_steps": [
+        "Open both YAML files and confirm the keys are present and profile separation is clear."
+      ],
+      "dependencies": [
+        "TASK-007"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-009",
+      "phase": "Backend bootstrap",
+      "category": "backend",
+      "priority": "critical",
+      "description": "Add backend package skeleton and config classes.",
+      "start_condition": "The backend has only the main application class.",
+      "acceptance_criteria": [
+        "The `config/`, `common/`, `auth/`, `user/`, `workspace/`, `project/`, `task/`, `board/`, and `timeline/` package trees exist with placeholder config classes where needed."
+      ],
+      "test_steps": [
+        "Run `./mvnw compile` and confirm it succeeds."
+      ],
+      "dependencies": [
+        "TASK-008"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-010",
+      "phase": "Backend bootstrap",
+      "category": "backend",
+      "priority": "critical",
+      "description": "Add CORS config and a health endpoint.",
+      "start_condition": "The backend cannot yet serve the frontend safely in local development and has no simple health probe.",
+      "acceptance_criteria": [
+        "CORS is configured for the frontend origin and `GET /api/health` returns a simple JSON health payload."
+      ],
+      "test_steps": [
+        "Run the app and call `curl http://localhost:8080/api/health` to confirm HTTP 200 with JSON."
+      ],
+      "dependencies": [
+        "TASK-009"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-011",
+      "phase": "Backend bootstrap",
+      "category": "backend",
+      "priority": "critical",
+      "description": "Add global API error shape.",
+      "start_condition": "Backend errors use default Spring responses.",
+      "acceptance_criteria": [
+        "A global exception handler returns one consistent JSON shape for validation, not found, and generic server errors."
+      ],
+      "test_steps": [
+        "Add or run one small controller test that proves a handled exception returns the custom error shape."
+      ],
+      "dependencies": [
+        "TASK-010"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-012",
+      "phase": "Backend bootstrap",
+      "category": "backend",
+      "priority": "critical",
+      "description": "Wire Flyway and a baseline migration.",
+      "start_condition": "Database migrations are not yet part of backend startup.",
+      "acceptance_criteria": [
+        "Flyway runs on startup and a baseline migration exists so the app can boot cleanly against the local database."
+      ],
+      "test_steps": [
+        "With Postgres running, start the app with `./mvnw spring-boot:run` and confirm the logs show Flyway migration execution."
+      ],
+      "dependencies": [
+        "TASK-011"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-013",
+      "phase": "Frontend bootstrap",
+      "category": "frontend",
+      "priority": "critical",
+      "description": "Scaffold the React + TypeScript frontend project.",
+      "start_condition": "`frontend/` does not exist.",
+      "acceptance_criteria": [
+        "`frontend/` exists as a Vite React TypeScript app and runs locally."
+      ],
+      "test_steps": [
+        "Run `npm run build` inside `frontend/` and confirm it succeeds."
+      ],
+      "dependencies": [
+        "TASK-012"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-014",
+      "phase": "Frontend bootstrap",
+      "category": "frontend",
+      "priority": "critical",
+      "description": "Add frontend runtime dependencies.",
+      "start_condition": "The frontend app only has the default Vite dependencies.",
+      "acceptance_criteria": [
+        "The frontend includes React Router, TanStack Query, Zustand, `@dnd-kit`, `gantt-task-react`, and `date-fns`."
+      ],
+      "test_steps": [
+        "Run `npm install` and then `npm run build` inside `frontend/`, and confirm both succeed."
+      ],
+      "dependencies": [
+        "TASK-013"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-015",
+      "phase": "Frontend bootstrap",
+      "category": "frontend",
+      "priority": "critical",
+      "description": "Create the frontend folder skeleton.",
+      "start_condition": "The frontend file tree does not match the architecture.",
+      "acceptance_criteria": [
+        "`src/app`, `src/pages`, `src/modules`, and `src/shared` exist with the planned subfolders and placeholder files."
+      ],
+      "test_steps": [
+        "Run `npm run build` and confirm it succeeds, then verify the new folders are present on disk."
+      ],
+      "dependencies": [
+        "TASK-014"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-016",
+      "phase": "Frontend bootstrap",
+      "category": "frontend",
+      "priority": "critical",
+      "description": "Add global style tokens.",
+      "start_condition": "The frontend still uses Vite starter styling.",
+      "acceptance_criteria": [
+        "`tokens.css` and `globals.css` define a pastel minimal theme with green as the primary accent."
+      ],
+      "test_steps": [
+        "Run the frontend and confirm the app renders with the new styles instead of the default Vite starter look."
+      ],
+      "dependencies": [
+        "TASK-015"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-017",
+      "phase": "Frontend bootstrap",
+      "category": "frontend",
+      "priority": "critical",
+      "description": "Add `ThemeProvider`.",
+      "start_condition": "Theme tokens exist only as CSS files and are not wrapped in an app-level provider.",
+      "acceptance_criteria": [
+        "`ThemeProvider.tsx` exists and is used by the app root to load the design tokens consistently."
+      ],
+      "test_steps": [
+        "Run `npm run build` and confirm the provider is referenced from the bootstrap path."
+      ],
+      "dependencies": [
+        "TASK-016"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-018",
+      "phase": "Frontend bootstrap",
+      "category": "frontend",
+      "priority": "critical",
+      "description": "Add `QueryProvider`.",
+      "start_condition": "There is no shared server-state provider.",
+      "acceptance_criteria": [
+        "`QueryProvider.tsx` creates the TanStack Query client and wraps the app."
+      ],
+      "test_steps": [
+        "Run `npm run build` and confirm `QueryProvider` is referenced from the app root."
+      ],
+      "dependencies": [
+        "TASK-017"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-019",
+      "phase": "Frontend bootstrap",
+      "category": "frontend",
+      "priority": "critical",
+      "description": "Add router and empty pages.",
+      "start_condition": "The frontend has no route structure matching the architecture.",
+      "acceptance_criteria": [
+        "Routes exist for sign-in, dashboard, board, timeline, and project settings, each with placeholder page components."
+      ],
+      "test_steps": [
+        "Run the dev server and visit each route without runtime errors."
+      ],
+      "dependencies": [
+        "TASK-018"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-020",
+      "phase": "Frontend bootstrap",
+      "category": "frontend",
+      "priority": "critical",
+      "description": "Add `AuthLayout`, `AppShell`, and `httpClient`.",
+      "start_condition": "Route placeholders exist but there is no shared layout or API client.",
+      "acceptance_criteria": [
+        "`AuthLayout.tsx`, `AppShell.tsx`, and `shared/api/httpClient.ts` exist, and the HTTP client is configured to send credentials by default."
+      ],
+      "test_steps": [
+        "Run `npm run build` and confirm `httpClient.ts` includes `credentials: \"include\"` or the equivalent client config."
+      ],
+      "dependencies": [
+        "TASK-019"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-021",
+      "phase": "Authentication and session",
+      "category": "auth",
+      "priority": "critical",
+      "description": "Add the `users` migration.",
+      "start_condition": "There is no persistent user table.",
+      "acceptance_criteria": [
+        "A Flyway migration creates the `users` table with login, email, password hash, display name, and timestamps."
+      ],
+      "test_steps": [
+        "Restart the backend and confirm the migration is applied successfully."
+      ],
+      "dependencies": [
+        "TASK-020"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-022",
+      "phase": "Authentication and session",
+      "category": "auth",
+      "priority": "critical",
+      "description": "Add the `User` entity and repository.",
+      "start_condition": "The `users` table exists but the backend has no Java model for it.",
+      "acceptance_criteria": [
+        "A `User` entity and repository exist in the `user` module."
+      ],
+      "test_steps": [
+        "Run `./mvnw compile` and confirm it succeeds."
+      ],
+      "dependencies": [
+        "TASK-021"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-023",
+      "phase": "Authentication and session",
+      "category": "auth",
+      "priority": "critical",
+      "description": "Add Spring Session JDBC tables and config.",
+      "start_condition": "The backend can authenticate later, but session persistence is not configured.",
+      "acceptance_criteria": [
+        "The project includes Spring Session JDBC configuration and the required session tables via migration or official schema import."
+      ],
+      "test_steps": [
+        "With the app running, confirm the session tables exist in PostgreSQL."
+      ],
+      "dependencies": [
+        "TASK-022"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-024",
+      "phase": "Authentication and session",
+      "category": "auth",
+      "priority": "critical",
+      "description": "Configure the Spring Security filter chain.",
+      "start_condition": "The backend does not distinguish between public and protected routes.",
+      "acceptance_criteria": [
+        "`/api/health` and the login endpoint are public, while protected API routes require authentication."
+      ],
+      "test_steps": [
+        "Run a backend test that proves `/api/health` is public and `/api/me` is unauthorized before login."
+      ],
+      "dependencies": [
+        "TASK-023"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-025",
+      "phase": "Authentication and session",
+      "category": "auth",
+      "priority": "critical",
+      "description": "Add password auth configuration binding.",
+      "start_condition": "Authentication-related values live only as loose YAML keys.",
+      "acceptance_criteria": [
+        "A typed config or properties class binds auth settings such as password policy or seed-user options used by the security setup."
+      ],
+      "test_steps": [
+        "Run `./mvnw compile` and confirm the properties class is referenced from security setup."
+      ],
+      "dependencies": [
+        "TASK-024"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-026",
+      "phase": "Authentication and session",
+      "category": "auth",
+      "priority": "critical",
+      "description": "Implement local user registration service.",
+      "start_condition": "The app can authenticate later, but there is no logic for creating a user with a hashed password.",
+      "acceptance_criteria": [
+        "A backend service can create a `User` record from login, email, display name, and password input while storing only a password hash."
+      ],
+      "test_steps": [
+        "Add a unit test proving registration stores a password hash and rejects a duplicate login."
+      ],
+      "dependencies": [
+        "TASK-025"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-027",
+      "phase": "Authentication and session",
+      "category": "auth",
+      "priority": "critical",
+      "description": "Implement login endpoint and session handling.",
+      "start_condition": "The registration and credential services exist but are not connected to the sign-in flow.",
+      "acceptance_criteria": [
+        "Successful login validates the submitted password, loads the matching user, and establishes the normal Spring-authenticated session."
+      ],
+      "test_steps": [
+        "Add a backend test covering successful login and rejected login with an invalid password."
+      ],
+      "dependencies": [
+        "TASK-026"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-028",
+      "phase": "Authentication and session",
+      "category": "auth",
+      "priority": "critical",
+      "description": "Implement `GET /api/me`.",
+      "start_condition": "Authenticated user state cannot be fetched by the frontend.",
+      "acceptance_criteria": [
+        "`GET /api/me` returns the current signed-in user payload."
+      ],
+      "test_steps": [
+        "Add a MockMvc test for authenticated and unauthenticated access."
+      ],
+      "dependencies": [
+        "TASK-027"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-029",
+      "phase": "Authentication and session",
+      "category": "auth",
+      "priority": "critical",
+      "description": "Implement `POST /api/logout`.",
+      "start_condition": "There is no explicit logout endpoint for the SPA.",
+      "acceptance_criteria": [
+        "`POST /api/logout` invalidates the session and returns a simple success response."
+      ],
+      "test_steps": [
+        "Add a test proving the session is invalidated after logout."
+      ],
+      "dependencies": [
+        "TASK-028"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-030",
+      "phase": "Authentication and session",
+      "category": "auth",
+      "priority": "critical",
+      "description": "Add frontend auth client and `AuthProvider`.",
+      "start_condition": "The backend exposes auth endpoints, but the frontend has no session state layer.",
+      "acceptance_criteria": [
+        "`modules/auth` contains types, API helpers, and `AuthProvider` bootstraps from `/api/me`."
+      ],
+      "test_steps": [
+        "Run `npm run build` and confirm the app root wraps itself with `AuthProvider`."
+      ],
+      "dependencies": [
+        "TASK-029"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-031",
+      "phase": "Authentication and session",
+      "category": "auth",
+      "priority": "critical",
+      "description": "Build `SignInPage`.",
+      "start_condition": "The auth module exists but there is no login UI.",
+      "acceptance_criteria": [
+        "`SignInPage.tsx` renders a minimal branded sign-in screen with login and password inputs that submit to the backend login endpoint."
+      ],
+      "test_steps": [
+        "Run the frontend and confirm the sign-in form submits login and password to the backend."
+      ],
+      "dependencies": [
+        "TASK-030"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-032",
+      "phase": "Authentication and session",
+      "category": "auth",
+      "priority": "critical",
+      "description": "Add protected route behavior.",
+      "start_condition": "Users can navigate to private pages without frontend gating.",
+      "acceptance_criteria": [
+        "Unauthenticated users are routed to sign-in, and authenticated users can enter the app shell."
+      ],
+      "test_steps": [
+        "Manually load a protected route while signed out and confirm the redirect to the sign-in page."
+      ],
+      "dependencies": [
+        "TASK-031"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-033",
+      "phase": "Workspace and project bootstrap",
+      "category": "workspace_project",
+      "priority": "critical",
+      "description": "Add workspace schema and persistence.",
+      "start_condition": "Users can exist, but workspaces do not.",
+      "acceptance_criteria": [
+        "Schema, entity, and repository support `workspaces` and `workspace_members`."
+      ],
+      "test_steps": [
+        "Run `./mvnw compile` and confirm the new tables appear after migration."
+      ],
+      "dependencies": [
+        "TASK-032"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-034",
+      "phase": "Workspace and project bootstrap",
+      "category": "workspace_project",
+      "priority": "critical",
+      "description": "Create a personal workspace on first login.",
+      "start_condition": "A signed-in user may exist without any workspace.",
+      "acceptance_criteria": [
+        "First successful login guarantees exactly one personal workspace and one owner membership for that user."
+      ],
+      "test_steps": [
+        "Add a backend test proving first login creates the workspace and second login does not create a duplicate."
+      ],
+      "dependencies": [
+        "TASK-033"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-035",
+      "phase": "Workspace and project bootstrap",
+      "category": "workspace_project",
+      "priority": "critical",
+      "description": "Implement `GET /api/workspaces`.",
+      "start_condition": "The frontend cannot ask which workspaces belong to the user.",
+      "acceptance_criteria": [
+        "The backend returns the current user's accessible workspaces."
+      ],
+      "test_steps": [
+        "Add a controller test showing an authenticated user gets only their own memberships."
+      ],
+      "dependencies": [
+        "TASK-034"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-036",
+      "phase": "Workspace and project bootstrap",
+      "category": "workspace_project",
+      "priority": "critical",
+      "description": "Add frontend workspace query and types.",
+      "start_condition": "Workspaces are available on the backend only.",
+      "acceptance_criteria": [
+        "`modules/workspace` contains typed workspace queries and hooks."
+      ],
+      "test_steps": [
+        "Run `npm run build` and confirm the hook is consumed by a page or layout component."
+      ],
+      "dependencies": [
+        "TASK-035"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-037",
+      "phase": "Workspace and project bootstrap",
+      "category": "workspace_project",
+      "priority": "critical",
+      "description": "Render the workspace switcher in `AppShell`.",
+      "start_condition": "Workspace data exists, but there is no visible workspace context in the UI.",
+      "acceptance_criteria": [
+        "`AppShell` shows the current workspace and allows selection from fetched workspaces."
+      ],
+      "test_steps": [
+        "Run the frontend and confirm the switcher renders loaded workspace names."
+      ],
+      "dependencies": [
+        "TASK-036"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-038",
+      "phase": "Workspace and project bootstrap",
+      "category": "workspace_project",
+      "priority": "critical",
+      "description": "Add project schema and persistence.",
+      "start_condition": "Workspaces exist but projects do not.",
+      "acceptance_criteria": [
+        "Schema, entity, and repository support `projects` and `project_members`."
+      ],
+      "test_steps": [
+        "Run migrations and `./mvnw compile`, and confirm both succeed."
+      ],
+      "dependencies": [
+        "TASK-037"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-039",
+      "phase": "Workspace and project bootstrap",
+      "category": "workspace_project",
+      "priority": "critical",
+      "description": "Implement `GET /api/workspaces/{workspaceId}/projects`.",
+      "start_condition": "Project lists cannot yet be loaded for a workspace.",
+      "acceptance_criteria": [
+        "The backend returns projects for a workspace the user belongs to."
+      ],
+      "test_steps": [
+        "Add a controller test for the authorized happy path and forbidden path."
+      ],
+      "dependencies": [
+        "TASK-038"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-040",
+      "phase": "Workspace and project bootstrap",
+      "category": "workspace_project",
+      "priority": "critical",
+      "description": "Implement `GET /api/projects/{projectId}`.",
+      "start_condition": "Project detail data is not available as its own endpoint.",
+      "acceptance_criteria": [
+        "The backend returns project metadata for a single accessible project."
+      ],
+      "test_steps": [
+        "Add a controller test for found, forbidden, and missing project cases."
+      ],
+      "dependencies": [
+        "TASK-039"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-041",
+      "phase": "Workspace and project bootstrap",
+      "category": "workspace_project",
+      "priority": "critical",
+      "description": "Implement `POST /api/workspaces/{workspaceId}/projects`.",
+      "start_condition": "Users can view projects later, but cannot create one yet.",
+      "acceptance_criteria": [
+        "The backend creates a project inside an accessible workspace."
+      ],
+      "test_steps": [
+        "Add a controller test proving the project is created and linked to the workspace."
+      ],
+      "dependencies": [
+        "TASK-040"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-042",
+      "phase": "Workspace and project bootstrap",
+      "category": "workspace_project",
+      "priority": "critical",
+      "description": "Add dashboard project list UI.",
+      "start_condition": "Project list data exists on the backend, but the dashboard does not use it.",
+      "acceptance_criteria": [
+        "`DashboardPage.tsx` loads and renders the current workspace's projects."
+      ],
+      "test_steps": [
+        "Run the frontend and confirm the dashboard shows live project data instead of placeholders."
+      ],
+      "dependencies": [
+        "TASK-041"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-043",
+      "phase": "Workspace and project bootstrap",
+      "category": "workspace_project",
+      "priority": "critical",
+      "description": "Add create-project UI.",
+      "start_condition": "The dashboard can show projects but cannot create one.",
+      "acceptance_criteria": [
+        "The dashboard includes a small create-project form or modal that calls the project creation API and refreshes the list."
+      ],
+      "test_steps": [
+        "Create a project from the UI and confirm it appears immediately and after page reload."
+      ],
+      "dependencies": [
+        "TASK-042"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-044",
+      "phase": "Board read path and task creation",
+      "category": "board",
+      "priority": "critical",
+      "description": "Add board-column schema and persistence.",
+      "start_condition": "Projects exist but board columns do not.",
+      "acceptance_criteria": [
+        "Schema, entity, and repository support `board_columns`."
+      ],
+      "test_steps": [
+        "Run migrations and `./mvnw compile`, and confirm both succeed."
+      ],
+      "dependencies": [
+        "TASK-043"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-045",
+      "phase": "Board read path and task creation",
+      "category": "board",
+      "priority": "critical",
+      "description": "Auto-create default columns for new projects.",
+      "start_condition": "Projects can be created without any board structure.",
+      "acceptance_criteria": [
+        "Every new project gets default columns such as `Todo`, `In Progress`, and `Done`."
+      ],
+      "test_steps": [
+        "Add a backend test proving project creation also creates the default columns in order."
+      ],
+      "dependencies": [
+        "TASK-044"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-046",
+      "phase": "Board read path and task creation",
+      "category": "board",
+      "priority": "critical",
+      "description": "Add task schema and persistence.",
+      "start_condition": "There is no durable task model.",
+      "acceptance_criteria": [
+        "Schema, entity, and repository support tasks with the shared fields needed by both board and timeline."
+      ],
+      "test_steps": [
+        "Run migrations and `./mvnw compile`, and confirm both succeed."
+      ],
+      "dependencies": [
+        "TASK-045"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-047",
+      "phase": "Board read path and task creation",
+      "category": "board",
+      "priority": "critical",
+      "description": "Implement `GET /api/projects/{projectId}/board`.",
+      "start_condition": "Board data cannot yet be loaded in one screen-shaped payload.",
+      "acceptance_criteria": [
+        "The backend returns board columns and their tasks for one accessible project."
+      ],
+      "test_steps": [
+        "Add a controller or service test proving the payload contains ordered columns and task cards."
+      ],
+      "dependencies": [
+        "TASK-046"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-048",
+      "phase": "Board read path and task creation",
+      "category": "board",
+      "priority": "critical",
+      "description": "Add frontend board query layer.",
+      "start_condition": "The board endpoint exists but the frontend has no types or hooks for it.",
+      "acceptance_criteria": [
+        "`modules/kanban` contains DTO types, API helpers, and a board query hook."
+      ],
+      "test_steps": [
+        "Run `npm run build` and confirm the board page imports the hook."
+      ],
+      "dependencies": [
+        "TASK-047"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-049",
+      "phase": "Board read path and task creation",
+      "category": "board",
+      "priority": "critical",
+      "description": "Render the read-only board page.",
+      "start_condition": "Board data can be fetched but not displayed.",
+      "acceptance_criteria": [
+        "`ProjectBoardPage.tsx` renders real columns and cards from the backend."
+      ],
+      "test_steps": [
+        "Run the frontend, open a project board, and confirm columns render without local mock data."
+      ],
+      "dependencies": [
+        "TASK-048"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-050",
+      "phase": "Board read path and task creation",
+      "category": "board",
+      "priority": "critical",
+      "description": "Implement `POST /api/projects/{projectId}/tasks`.",
+      "start_condition": "The board is readable but there is no way to create tasks.",
+      "acceptance_criteria": [
+        "The backend can create a task in a given project and default column."
+      ],
+      "test_steps": [
+        "Add a controller test proving a task is created with the expected project and column."
+      ],
+      "dependencies": [
+        "TASK-049"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-051",
+      "phase": "Board read path and task creation",
+      "category": "board",
+      "priority": "critical",
+      "description": "Add create-task UI on the board.",
+      "start_condition": "The task creation API exists but the board cannot call it.",
+      "acceptance_criteria": [
+        "The board page includes a small task-create control that adds a task and refreshes the board."
+      ],
+      "test_steps": [
+        "Create a task from the UI and confirm it appears immediately and after reload."
+      ],
+      "dependencies": [
+        "TASK-050"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-052",
+      "phase": "Task detail drawer and task editing",
+      "category": "task",
+      "priority": "critical",
+      "description": "Implement `GET /api/tasks/{taskId}`.",
+      "start_condition": "Board cards exist but task details cannot be fetched individually.",
+      "acceptance_criteria": [
+        "The backend returns full task detail for one accessible task."
+      ],
+      "test_steps": [
+        "Add a controller test for found, forbidden, and missing task cases."
+      ],
+      "dependencies": [
+        "TASK-051"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-053",
+      "phase": "Task detail drawer and task editing",
+      "category": "task",
+      "priority": "critical",
+      "description": "Add task drawer URL state.",
+      "start_condition": "The frontend has no stable way to represent the selected task.",
+      "acceptance_criteria": [
+        "Opening a task sets `taskId` in the URL query string and closing the drawer removes it."
+      ],
+      "test_steps": [
+        "Open a task, refresh the page, and confirm the same task drawer stays open."
+      ],
+      "dependencies": [
+        "TASK-052"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-054",
+      "phase": "Task detail drawer and task editing",
+      "category": "task",
+      "priority": "critical",
+      "description": "Render the task detail drawer.",
+      "start_condition": "Selected task state exists but the UI does not show task details.",
+      "acceptance_criteria": [
+        "A drawer opens from the board page and displays fetched task data."
+      ],
+      "test_steps": [
+        "Click a task card and confirm the drawer loads the correct task title and metadata."
+      ],
+      "dependencies": [
+        "TASK-053"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-055",
+      "phase": "Task detail drawer and task editing",
+      "category": "task",
+      "priority": "critical",
+      "description": "Implement `PATCH /api/tasks/{taskId}`.",
+      "start_condition": "Tasks can be read but not updated.",
+      "acceptance_criteria": [
+        "The backend supports partial updates for title, description, priority, start date, and due date."
+      ],
+      "test_steps": [
+        "Add a controller test proving a partial update changes only the provided fields."
+      ],
+      "dependencies": [
+        "TASK-054"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-056",
+      "phase": "Task detail drawer and task editing",
+      "category": "task",
+      "priority": "critical",
+      "description": "Add title and description editors in the drawer.",
+      "start_condition": "Task updates are possible on the backend only.",
+      "acceptance_criteria": [
+        "The drawer includes editable title and description fields wired to the update endpoint."
+      ],
+      "test_steps": [
+        "Edit a task title and description in the UI and confirm the new values persist after reload."
+      ],
+      "dependencies": [
+        "TASK-055"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-057",
+      "phase": "Task detail drawer and task editing",
+      "category": "task",
+      "priority": "critical",
+      "description": "Add priority and date editors in the drawer.",
+      "start_condition": "Basic text editing works, but task scheduling fields remain read-only.",
+      "acceptance_criteria": [
+        "The drawer can edit priority, start date, and due date using the same update endpoint."
+      ],
+      "test_steps": [
+        "Edit the dates and priority in the UI and confirm the values persist after reload."
+      ],
+      "dependencies": [
+        "TASK-056"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-058",
+      "phase": "Kanban interactions",
+      "category": "kanban",
+      "priority": "critical",
+      "description": "Add drag-and-drop behavior to the board UI.",
+      "start_condition": "The board is read-only and cards cannot be moved interactively.",
+      "acceptance_criteria": [
+        "`@dnd-kit` is wired so cards can be dragged between columns with local visual feedback only."
+      ],
+      "test_steps": [
+        "Run the frontend and confirm a card can be dragged visually without crashing the page."
+      ],
+      "dependencies": [
+        "TASK-057"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-059",
+      "phase": "Kanban interactions",
+      "category": "kanban",
+      "priority": "critical",
+      "description": "Implement `PATCH /api/tasks/{taskId}/move`.",
+      "start_condition": "The UI can drag cards, but the backend cannot persist a move.",
+      "acceptance_criteria": [
+        "The backend updates column and ordering for a task move request."
+      ],
+      "test_steps": [
+        "Add backend tests covering move within one column and move across different columns."
+      ],
+      "dependencies": [
+        "TASK-058"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-060",
+      "phase": "Kanban interactions",
+      "category": "kanban",
+      "priority": "critical",
+      "description": "Wire drag end to the move mutation.",
+      "start_condition": "Local drag works, but nothing is persisted.",
+      "acceptance_criteria": [
+        "Dropping a card calls the move endpoint and refreshes board data on success."
+      ],
+      "test_steps": [
+        "Move a card to a new column and confirm it remains there after page reload."
+      ],
+      "dependencies": [
+        "TASK-059"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-061",
+      "phase": "Kanban interactions",
+      "category": "kanban",
+      "priority": "critical",
+      "description": "Add optimistic move state.",
+      "start_condition": "Moves persist, but the UI waits on the network before updating.",
+      "acceptance_criteria": [
+        "The board updates immediately on drop and rolls back if the mutation fails."
+      ],
+      "test_steps": [
+        "Simulate a failed move request and confirm the card snaps back to its previous position."
+      ],
+      "dependencies": [
+        "TASK-060"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-062",
+      "phase": "Comments",
+      "category": "comments",
+      "priority": "high",
+      "description": "Add comment schema and persistence.",
+      "start_condition": "The task drawer has no comment backing model.",
+      "acceptance_criteria": [
+        "Schema, entity, and repository support task comments."
+      ],
+      "test_steps": [
+        "Run migrations and `./mvnw compile`, and confirm both succeed."
+      ],
+      "dependencies": [
+        "TASK-061"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-063",
+      "phase": "Comments",
+      "category": "comments",
+      "priority": "high",
+      "description": "Implement task comment endpoints.",
+      "start_condition": "Comments exist in the data model only.",
+      "acceptance_criteria": [
+        "`GET /api/tasks/{taskId}/comments` and `POST /api/tasks/{taskId}/comments` work for accessible tasks."
+      ],
+      "test_steps": [
+        "Add controller tests for listing and creating comments."
+      ],
+      "dependencies": [
+        "TASK-062"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-064",
+      "phase": "Comments",
+      "category": "comments",
+      "priority": "high",
+      "description": "Render the comment list in the task drawer.",
+      "start_condition": "The comment API exists but the drawer does not use it.",
+      "acceptance_criteria": [
+        "The task drawer loads and displays comments for the selected task."
+      ],
+      "test_steps": [
+        "Open a task with comments and confirm they render in the drawer."
+      ],
+      "dependencies": [
+        "TASK-063"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-065",
+      "phase": "Comments",
+      "category": "comments",
+      "priority": "high",
+      "description": "Add the comment composer.",
+      "start_condition": "Comments can be listed but not created from the UI.",
+      "acceptance_criteria": [
+        "The drawer includes a comment form that posts a comment and refreshes the list."
+      ],
+      "test_steps": [
+        "Add a comment in the UI and confirm it appears immediately and after reload."
+      ],
+      "dependencies": [
+        "TASK-064"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-066",
+      "phase": "Timeline and scheduling",
+      "category": "timeline",
+      "priority": "critical",
+      "description": "Add dependency schema and persistence.",
+      "start_condition": "Tasks have dates, but dependency data does not exist.",
+      "acceptance_criteria": [
+        "Schema, entity, and repository support task-to-task dependencies."
+      ],
+      "test_steps": [
+        "Run migrations and `./mvnw compile`, and confirm both succeed."
+      ],
+      "dependencies": [
+        "TASK-065"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-067",
+      "phase": "Timeline and scheduling",
+      "category": "timeline",
+      "priority": "critical",
+      "description": "Implement `GET /api/projects/{projectId}/timeline`.",
+      "start_condition": "There is no timeline-shaped read model.",
+      "acceptance_criteria": [
+        "The backend returns tasks with scheduling fields needed by the Gantt view."
+      ],
+      "test_steps": [
+        "Add a controller or service test proving timeline payloads include task ids, titles, start dates, and due dates."
+      ],
+      "dependencies": [
+        "TASK-066"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-068",
+      "phase": "Timeline and scheduling",
+      "category": "timeline",
+      "priority": "critical",
+      "description": "Add frontend timeline query layer.",
+      "start_condition": "The timeline endpoint exists but the frontend has no types or hooks for it.",
+      "acceptance_criteria": [
+        "`modules/gantt` contains typed API helpers and a query hook for timeline data."
+      ],
+      "test_steps": [
+        "Run `npm run build` and confirm the timeline page imports the hook."
+      ],
+      "dependencies": [
+        "TASK-067"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-069",
+      "phase": "Timeline and scheduling",
+      "category": "timeline",
+      "priority": "critical",
+      "description": "Render a read-only Gantt view.",
+      "start_condition": "Timeline data is available but not visualized.",
+      "acceptance_criteria": [
+        "`ProjectTimelinePage.tsx` renders the project tasks in a Gantt component using real API data."
+      ],
+      "test_steps": [
+        "Run the frontend and confirm tasks with dates show visible bars on the timeline."
+      ],
+      "dependencies": [
+        "TASK-068"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-070",
+      "phase": "Timeline and scheduling",
+      "category": "timeline",
+      "priority": "critical",
+      "description": "Implement `PATCH /api/tasks/{taskId}/schedule`.",
+      "start_condition": "Task dates exist but cannot be changed through a dedicated schedule mutation.",
+      "acceptance_criteria": [
+        "The backend can update start and due dates through a focused scheduling endpoint."
+      ],
+      "test_steps": [
+        "Add a controller test proving schedule updates persist correctly."
+      ],
+      "dependencies": [
+        "TASK-069"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-071",
+      "phase": "Timeline and scheduling",
+      "category": "timeline",
+      "priority": "critical",
+      "description": "Wire Gantt bar drag/resize to schedule updates.",
+      "start_condition": "The Gantt view is read-only.",
+      "acceptance_criteria": [
+        "Dragging or resizing a bar sends the schedule mutation and refreshes the timeline."
+      ],
+      "test_steps": [
+        "Move a task bar in the UI and confirm the new dates remain after reload."
+      ],
+      "dependencies": [
+        "TASK-070"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-072",
+      "phase": "Dependencies in the timeline",
+      "category": "dependencies",
+      "priority": "high",
+      "description": "Implement dependency create/delete endpoints.",
+      "start_condition": "Dependency rows can exist in the database only.",
+      "acceptance_criteria": [
+        "`POST /api/tasks/{taskId}/dependencies` and `DELETE /api/tasks/{taskId}/dependencies/{dependencyId}` work for accessible tasks."
+      ],
+      "test_steps": [
+        "Add controller tests for creating and deleting a dependency."
+      ],
+      "dependencies": [
+        "TASK-071"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-073",
+      "phase": "Dependencies in the timeline",
+      "category": "dependencies",
+      "priority": "high",
+      "description": "Include dependencies in the timeline payload.",
+      "start_condition": "The dependency endpoints exist, but the timeline response does not expose them.",
+      "acceptance_criteria": [
+        "`GET /api/projects/{projectId}/timeline` includes dependency information needed by the frontend Gantt component."
+      ],
+      "test_steps": [
+        "Extend the timeline test to confirm dependencies appear in the response."
+      ],
+      "dependencies": [
+        "TASK-072"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-074",
+      "phase": "Dependencies in the timeline",
+      "category": "dependencies",
+      "priority": "high",
+      "description": "Render dependency lines in the Gantt view.",
+      "start_condition": "The timeline payload includes dependencies, but the UI ignores them.",
+      "acceptance_criteria": [
+        "The timeline page renders dependency lines between related tasks."
+      ],
+      "test_steps": [
+        "View a project with at least one dependency and confirm the link line is visible."
+      ],
+      "dependencies": [
+        "TASK-073"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-075",
+      "phase": "Dependencies in the timeline",
+      "category": "dependencies",
+      "priority": "high",
+      "description": "Add minimal dependency management UI.",
+      "start_condition": "Dependencies can be rendered but not managed from the app.",
+      "acceptance_criteria": [
+        "The task drawer or timeline includes a minimal control to add and remove one dependency at a time."
+      ],
+      "test_steps": [
+        "Create and remove a dependency in the UI and confirm the Gantt view updates correctly after reload."
+      ],
+      "dependencies": [
+        "TASK-074"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-076",
+      "phase": "Hardening and polish",
+      "category": "hardening",
+      "priority": "high",
+      "description": "Add authorization checks across workspace and project endpoints.",
+      "start_condition": "Some endpoints may rely on implicit trust or partial checks.",
+      "acceptance_criteria": [
+        "Every workspace-, project-, task-, comment-, and dependency-scoped endpoint verifies membership before returning data or mutating state."
+      ],
+      "test_steps": [
+        "Add or extend backend tests to prove cross-workspace access is rejected."
+      ],
+      "dependencies": [
+        "TASK-075"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-077",
+      "phase": "Hardening and polish",
+      "category": "hardening",
+      "priority": "high",
+      "description": "Standardize 401, 403, and 404 API responses.",
+      "start_condition": "Protected endpoints may fail with inconsistent status bodies.",
+      "acceptance_criteria": [
+        "The API returns a consistent JSON error shape for unauthorized, forbidden, and missing resources."
+      ],
+      "test_steps": [
+        "Add tests covering one example of each status code."
+      ],
+      "dependencies": [
+        "TASK-076"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-078",
+      "phase": "Hardening and polish",
+      "category": "hardening",
+      "priority": "medium",
+      "description": "Add loading, empty, and error states to core screens.",
+      "start_condition": "Dashboard, board, drawer, and timeline assume the happy path.",
+      "acceptance_criteria": [
+        "Each core screen handles loading, empty data, and request failure in the UI."
+      ],
+      "test_steps": [
+        "Simulate each state locally and confirm the UI stays usable and readable."
+      ],
+      "dependencies": [
+        "TASK-077"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-079",
+      "phase": "Hardening and polish",
+      "category": "hardening",
+      "priority": "medium",
+      "description": "Add toast notifications for failed mutations.",
+      "start_condition": "Failed creates and updates only fail silently or in the console.",
+      "acceptance_criteria": [
+        "Task create, task update, move, comment create, and schedule update failures show visible toasts."
+      ],
+      "test_steps": [
+        "Force one mutation failure and confirm the toast appears with a useful message."
+      ],
+      "dependencies": [
+        "TASK-078"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-080",
+      "phase": "Hardening and polish",
+      "category": "polish",
+      "priority": "medium",
+      "description": "Add a read-only project settings page.",
+      "start_condition": "The settings route exists only as a placeholder.",
+      "acceptance_criteria": [
+        "`ProjectSettingsPage.tsx` shows project metadata and default board column settings in read-only form."
+      ],
+      "test_steps": [
+        "Navigate to the settings page and confirm it loads real project data."
+      ],
+      "dependencies": [
+        "TASK-079"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-081",
+      "phase": "Hardening and polish",
+      "category": "documentation",
+      "priority": "medium",
+      "description": "Finish the README runbook.",
+      "start_condition": "The README only has bootstrapping notes.",
+      "acceptance_criteria": [
+        "`README.md` includes exact local setup steps, required env vars, frontend/backend commands, and notes for local login/password authentication."
+      ],
+      "test_steps": [
+        "Read the README top to bottom and confirm a new developer could start the app without guessing missing steps."
+      ],
+      "dependencies": [
+        "TASK-080"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-082",
+      "phase": "Hardening and polish",
+      "category": "documentation",
+      "priority": "medium",
+      "description": "Add a manual smoke checklist.",
+      "start_condition": "There is no final acceptance checklist for the MVP.",
+      "acceptance_criteria": [
+        "A markdown checklist exists under `docs/` covering login, workspace load, project creation, board usage, task editing, comments, timeline edits, and dependency management."
+      ],
+      "test_steps": [
+        "Open the checklist and confirm each core user flow has a concrete manual test step."
+      ],
+      "dependencies": [
+        "TASK-081"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-083",
+      "phase": "Hardening and polish",
+      "category": "verification",
+      "priority": "medium",
+      "description": "Run the MVP smoke pass and fix the first blocking defect.",
+      "start_condition": "The app is feature-complete on paper but not validated as a whole.",
+      "acceptance_criteria": [
+        "The full smoke checklist has been run once locally and the first blocking defect found during that run is fixed."
+      ],
+      "test_steps": [
+        "Record the executed checklist items and rerun the previously failing step until it passes."
+      ],
+      "dependencies": [
+        "TASK-082"
+      ],
+      "status": "pending"
+    }
+  ]
+}
