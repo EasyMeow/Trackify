@@ -162,3 +162,36 @@ Follow-up risk / notes:
 - No backend code changes; no changes to `pom.xml`, `.env.example`, or any other file. Package skeleton (TASK-009), CORS+health (TASK-010), error shape (TASK-011), Flyway baseline (TASK-012) all still pending.
 - Next pending task: TASK-009 (package skeleton: `config/`, `common/`, `auth/`, `user/`, `workspace/`, `project/`, `task/`, `board/`, `timeline/` with placeholder config classes).
 
+
+## 2026-04-26 — TASK-009: backend package skeleton + placeholder config classes
+
+What changed:
+- Created the full per-domain package tree under `backend/src/main/java/com/trackify/` matching architecture.md §3 exactly: 9 top-level packages (`config`, `common`, `auth`, `user`, `workspace`, `project`, `task`, `board`, `timeline`) and 37 leaf packages.
+- `config/`: three placeholder `@Configuration` classes — `WebConfig.java` (CORS goes here in TASK-010), `JacksonConfig.java` (ObjectMapper customization hook), `OpenApiConfig.java` (OpenAPI/springdoc hook if added later). All three are empty bodies — Spring will pick them up via component scan but they contribute no beans yet, so no behavior change.
+- `common/{exception,response,security,util}` — 4 leaf packages, each with a one-line javadoc `package-info.java`.
+- `auth/`, `user/`, `workspace/`, `project/`, `task/` — each with the standard 5-layer split per architecture §7.1: `controller/`, `application/`, `domain/`, `infrastructure/`, `dto/`. 25 leaf packages total, each with `package-info.java`.
+- `board/`, `timeline/` — each with `controller/`, `application/`, `query/`, `dto/` (note: `query/` instead of the standard `infrastructure/` per architecture §3, because these modules host read-models rather than write-side persistence). 8 leaf packages total, each with `package-info.java`.
+- 37 leaf `package-info.java` files in total. Each one is a single short javadoc comment + the package declaration — purely structural, no logic. They give every package a Java-visible source file (Git can't track empty dirs and javac needs at least one .java per package for it to "exist" in the compiled module).
+- Marked TASK-009 status = done in tasks.json.
+
+What was tested:
+- Per task `test_steps`: `./mvnw -B -ntp compile` from `backend/` → BUILD SUCCESS in 0.5s. Compiled 41 source files (3 config classes + 37 package-info + 1 TrackifyApplication). Java 21 target preserved.
+- Sanity check: `find src/main/java/com/trackify -type d | sort` confirms exactly the 9 top-level + 37 leaf directories from architecture.md §3 (no extras, no missing).
+- Skipped Gradle compile/test step from the loop instructions per the conditional in those instructions: backend uses Maven (`./mvnw`), no `gradlew`/`settings.gradle.kts` exists. Maven is the source of truth (architecture.md §1, tasks.json TASK-006/007/008/009 verbiage). Reconciliation was already documented in TASK-006.
+
+Design choice — `package-info.java` over `.gitkeep`:
+- `.gitkeep` would persist the directory in Git but javac would never see those packages — they'd have no compiled `Package` object, no place to attach package-level annotations, and tools like Spring's component scan or static analyzers would skip them. `package-info.java` is the idiomatic Java answer: it's a real source file that javac recognizes, anchors the package in the compiled module, and gives us a per-package documentation slot for free. Cost is 37 single-line files; benefit is that every leaf package is a first-class Java entity from day one.
+
+Design choice — empty `@Configuration` classes for `config/`:
+- Architecture.md §3 names exactly three classes (`WebConfig`, `JacksonConfig`, `OpenApiConfig`). I created them as empty `@Configuration`-annotated classes rather than as bare placeholder files because: (1) the annotation makes Spring aware of them at component-scan time, so future tasks can add `@Bean`/`@EnableWebMvc`/etc. methods without changing the class declaration; (2) an empty `@Configuration` registers no beans and has no runtime cost; (3) it documents intent — someone reading these classes knows immediately they're meant to host beans.
+
+Follow-up risk / notes:
+- `OpenApiConfig` is a forward-looking placeholder. There's no springdoc or OpenAPI dependency in `pom.xml` (TASK-007 didn't include it). If we never add OpenAPI, this class can be deleted without consequence. Leaving it because architecture.md §3 lists it explicitly.
+- `JacksonConfig` is also forward-looking — Spring Boot's default Jackson config is fine for the MVP. Keep the class in place so when we eventually need `JavaTimeModule` tweaks or custom serializers (likely once Gantt date payloads start round-tripping `LocalDate`/`Instant`), we have a home for them without inventing a new file.
+- `package-info.java` files use one-liner javadocs with implementation hints (e.g. "CORS wiring lands here in TASK-010", "Source of truth for task mutations (architecture.md §12)"). These are anchors for future agents working through the task list — when TASK-010 starts, grep for "TASK-010" in package-info files surfaces `WebConfig`'s comment immediately. If those task-id breadcrumbs feel noisy later, they're cheap to remove in TASK-081's polish pass.
+- Empty `@Configuration` classes mean Spring's component scan now sees three more configurations than before. No `@Bean` methods are registered, so no measurable startup-time difference and no functional change. If someone later adds `@ConditionalOnMissingBean` or `@EnableConfigurationProperties` to one of these files, it'll Just Work because the class is already wired into the scan.
+- `board/query/` and `timeline/query/` deliberately replace the usual `infrastructure/` layer for those two modules — that matches architecture.md §3 and §7.2 ("board read model… board-level query optimized for Kanban UI" / "Gantt read model… timeline query shaped for bars"). The write-side for `board` (move-task command) and `timeline` (schedule update) lives in the `task` module (architecture.md §12: "The `task` module is the source of truth for task mutations"), so `board/` and `timeline/` legitimately need no `infrastructure/` of their own.
+- No changes outside `backend/src/main/java/com/trackify/`. `pom.xml`, `application.yml`, `application-local.yml`, `.env.example`, `docker-compose.yml`, `README.md` are all untouched.
+- The full `tree` is now ready to receive code from TASK-010 onward without any further structural decisions — every layer has a permanent, javac-visible home.
+- Next pending task: TASK-010 (CORS config + `GET /api/health` endpoint). `WebConfig.java` is the natural home for the CORS bean (its javadoc already says so).
+
