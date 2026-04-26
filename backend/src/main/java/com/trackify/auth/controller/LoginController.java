@@ -4,6 +4,7 @@ import com.trackify.auth.application.LocalUserPrincipal;
 import com.trackify.auth.dto.LoginRequest;
 import com.trackify.auth.dto.LoginResponse;
 import com.trackify.common.response.ApiError;
+import com.trackify.workspace.application.WorkspaceBootstrapService;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -33,6 +34,11 @@ import org.springframework.web.bind.annotation.RestController;
  * then persists the resulting {@link SecurityContext} into the HTTP session
  * via the configured {@link SecurityContextRepository} so Spring Session JDBC
  * carries it across requests.
+ *
+ * <p>TASK-034: After the credentials are verified, delegates to
+ * {@link WorkspaceBootstrapService#ensurePersonalWorkspace} to guarantee the
+ * user owns at least one workspace. The call is idempotent — subsequent logins
+ * are no-ops.
  */
 @RestController
 @RequestMapping("/api/auth")
@@ -40,11 +46,14 @@ public class LoginController {
 
     private final AuthenticationManager authenticationManager;
     private final SecurityContextRepository securityContextRepository;
+    private final WorkspaceBootstrapService workspaceBootstrapService;
 
     public LoginController(AuthenticationManager authenticationManager,
-                           SecurityContextRepository securityContextRepository) {
+                           SecurityContextRepository securityContextRepository,
+                           WorkspaceBootstrapService workspaceBootstrapService) {
         this.authenticationManager = authenticationManager;
         this.securityContextRepository = securityContextRepository;
+        this.workspaceBootstrapService = workspaceBootstrapService;
     }
 
     @PostMapping("/login")
@@ -60,6 +69,10 @@ public class LoginController {
         securityContextRepository.saveContext(context, httpRequest, httpResponse);
 
         LocalUserPrincipal principal = (LocalUserPrincipal) auth.getPrincipal();
+
+        // TASK-034: ensure the user has a personal workspace (idempotent).
+        workspaceBootstrapService.ensurePersonalWorkspace(principal.userId(), principal.username());
+
         return new LoginResponse(principal.userId(), principal.username());
     }
 

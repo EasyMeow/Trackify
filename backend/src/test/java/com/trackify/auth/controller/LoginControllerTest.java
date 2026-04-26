@@ -13,6 +13,7 @@ import com.trackify.config.SecurityConfig;
 import com.trackify.config.WebConfig;
 import com.trackify.user.domain.User;
 import com.trackify.user.infrastructure.UserRepository;
+import com.trackify.workspace.application.WorkspaceBootstrapService;
 
 import jakarta.servlet.http.HttpSession;
 
@@ -62,6 +63,9 @@ class LoginControllerTest {
 
     @MockitoBean
     private UserRepository userRepository;
+
+    @MockitoBean
+    private WorkspaceBootstrapService workspaceBootstrapService;
 
     @Autowired
     private PasswordEncoder passwordEncoder;
