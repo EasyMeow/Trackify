@@ -1,4 +1,5 @@
 import { createBrowserRouter, Outlet } from 'react-router-dom';
+import { RequireAnonymous, RequireAuth } from './guards/RouteGuards';
 import { AppShell } from './layouts/AppShell';
 import { AuthLayout } from './layouts/AuthLayout';
 import DashboardPage from '../pages/DashboardPage';
@@ -9,17 +10,21 @@ import SignInPage from '../pages/SignInPage';
 
 function AuthLayoutRoute() {
   return (
-    <AuthLayout>
-      <Outlet />
-    </AuthLayout>
+    <RequireAnonymous>
+      <AuthLayout>
+        <Outlet />
+      </AuthLayout>
+    </RequireAnonymous>
   );
 }
 
 function AppShellRoute() {
   return (
-    <AppShell>
-      <Outlet />
-    </AppShell>
+    <RequireAuth>
+      <AppShell>
+        <Outlet />
+      </AppShell>
+    </RequireAuth>
   );
 }
 
