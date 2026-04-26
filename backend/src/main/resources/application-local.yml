@@ -1,0 +1,31 @@
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/trackify}
+    username: ${SPRING_DATASOURCE_USERNAME:trackify}
+    password: ${SPRING_DATASOURCE_PASSWORD:changeme}
+  jpa:
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+  flyway:
+    clean-disabled: false
+
+server:
+  port: ${SERVER_PORT:8080}
+  servlet:
+    session:
+      cookie:
+        secure: ${SERVER_SERVLET_SESSION_COOKIE_SECURE:false}
+        same-site: ${SERVER_SERVLET_SESSION_COOKIE_SAME_SITE:lax}
+
+trackify:
+  cors:
+    allowed-origin: ${FRONTEND_ORIGIN:http://localhost:5173}
+
+logging:
+  level:
+    com.trackify: DEBUG
+    org.springframework.web: INFO
+    org.hibernate.SQL: DEBUG
+    org.hibernate.orm.jdbc.bind: TRACE

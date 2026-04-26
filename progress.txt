@@ -127,3 +127,38 @@ Follow-up risk / notes:
 - No code changes outside `pom.xml`. Package skeleton (TASK-009), config files (TASK-008), CORS/health endpoint (TASK-010), error handler (TASK-011), and Flyway baseline (TASK-012) are all still pending and remain TASK-008+'s scope.
 - Next pending task: TASK-008 (`application.yml` + `application-local.yml` with datasource/session/auth/CORS/server.port placeholders).
 
+
+## 2026-04-26 — TASK-008: backend configuration files
+
+What changed:
+- Created `backend/src/main/resources/` (was missing — Maven warned about it during TASK-006).
+- Added `application.yml` (default profile-agnostic config). Keys: `spring.application.name`, `spring.profiles.active=${SPRING_PROFILES_ACTIVE:local}`, `spring.datasource.{url,username,password}` (no defaults — must come from env), `spring.datasource.hikari.pool-name`, `spring.jpa.{open-in-view=false, hibernate.ddl-auto=validate}` (Flyway owns schema, so JPA only validates), `spring.jpa.properties.hibernate.jdbc.time_zone=UTC`, `spring.flyway.{enabled, locations=classpath:db/migration, baseline-on-migrate=false}`, `spring.session.{store-type=jdbc, jdbc.initialize-schema=never, jdbc.table-name, timeout}` (TASK-023 will own the session schema migration), `server.port`, `server.error.{include-message,include-binding-errors}=always`, `server.servlet.session.{timeout, cookie.{name,http-only,secure=true,same-site}}` (production-safe defaults — secure=true), `trackify.cors.{allowed-origin,allowed-methods,allowed-headers,allow-credentials=true}` (custom prefix; will be bound by TASK-010's CORS config), `trackify.auth.password.{encoder-strength,min-length}`, `trackify.auth.bootstrap.admin.{login,email,password}` (empty-string defaults so TASK-025/026 can detect "disabled"), and a `logging.level` block.
+- Added `application-local.yml` (local-dev overrides). Keys: `spring.datasource.{url,username,password}` with defaults matching `docker-compose.yml`'s Postgres (`localhost:5432/trackify`, user/pwd `trackify/changeme`) so the app boots even without a `.env`; `spring.jpa.show-sql=true` + `format_sql=true`; `spring.flyway.clean-disabled=false` (allow `flyway:clean` only on local); `server.servlet.session.cookie.{secure=false, same-site=lax}` (overrides the production-safe default for plain HTTP localhost); `trackify.cors.allowed-origin` defaulted to `http://localhost:5173`; verbose `logging.level` (com.trackify=DEBUG, hibernate SQL+bind tracing for dev introspection).
+- Marked TASK-008 status = done in tasks.json.
+
+What was tested:
+- Per task `test_steps`: opened both YAML files and confirmed:
+  - `application.yml` covers all five required areas — datasource, session, auth, CORS origin, server port.
+  - `application-local.yml` overrides datasource/CORS/cookie-secure for local development without duplicating production defaults.
+  - Profile separation is clear: `application.yml` is the canonical/production-shaped baseline, `application-local.yml` only contains keys that diverge for local dev.
+- Sanity check beyond the spec: `./mvnw -B -ntp compile` from `backend/` → BUILD SUCCESS. YAML files are not parsed at compile time, but the build still completed cleanly with the new `resources/` directory present.
+- Skipped Gradle compile/test step from the loop instructions per the conditional in those instructions: backend uses Maven (`./mvnw`), no `gradlew`/`settings.gradle.kts` exists. Maven is the source of truth (architecture.md §1, tasks.json TASK-006/007/008 verbiage). Reconciliation already documented in TASK-006.
+- Did NOT run `./mvnw spring-boot:run` — JPA auto-config still needs the `users` table that TASK-021 creates and Flyway has no migrations yet (TASK-012 baseline pending). Boot would fail at startup. Acceptable per task scope: the spec only asks to confirm the keys exist.
+
+Profile-key choices (rationale for non-obvious ones):
+- `spring.session.jdbc.initialize-schema=never`: avoids Spring Session's built-in Postgres schema bootstrap stomping on Flyway. TASK-023 will add the session DDL via Flyway migration explicitly.
+- `spring.jpa.hibernate.ddl-auto=validate`: enforces that the JPA model matches the Flyway-managed schema; any drift surfaces at startup instead of silently mutating the DB.
+- `server.servlet.session.cookie.secure=true` in `application.yml`, overridden to `false` in `application-local.yml`: production-safe by default, dev-pragmatic on localhost. Aligns with the .env.example note about flipping these for HTTPS.
+- `trackify.*` prefix chosen instead of overloading `spring.*` so the upcoming `@ConfigurationProperties` classes (TASK-025) own a clean namespace.
+- `spring.profiles.active=${SPRING_PROFILES_ACTIVE:local}` defaults to `local` so first-time clones work without exporting env vars; CI/prod set `SPRING_PROFILES_ACTIVE` explicitly.
+
+Follow-up risk / notes:
+- `trackify.cors.*` and `trackify.auth.*` are loose YAML keys today — there's no `@ConfigurationProperties` binding yet. TASK-010 (CORS config) will read the cors keys; TASK-025 (auth properties class) will bind the auth keys. If those tasks rename the keys, update both YAMLs and `.env.example` together.
+- `spring.session.jdbc.table-name` is set to the default (`SPRING_SESSION`) explicitly. If TASK-023 chooses a custom table name, change here too.
+- `application-local.yml` uses Postgres credentials matching `docker-compose.yml` defaults. If those defaults ever change (e.g. password rotation), update both files.
+- `org.hibernate.orm.jdbc.bind=TRACE` logs raw bound parameter values — fine on local, must NEVER be enabled on shared/prod environments because it leaks PII into logs. The fact that this only lives in `application-local.yml` is the safety boundary; do not promote that line into `application.yml`.
+- `trackify.auth.bootstrap.admin.password` will end up in the env in plaintext. That's acceptable for a self-hosted MVP but should be flagged in TASK-081's runbook ("set this once, then unset and restart"), or TASK-025/026 should consume it once and clear it from memory.
+- `spring.flyway.clean-disabled=false` in local enables `./mvnw flyway:clean` for fast schema resets while iterating on migrations. Deliberately NOT set in `application.yml`, so Flyway's own default (`true`) protects production.
+- No backend code changes; no changes to `pom.xml`, `.env.example`, or any other file. Package skeleton (TASK-009), CORS+health (TASK-010), error shape (TASK-011), Flyway baseline (TASK-012) all still pending.
+- Next pending task: TASK-009 (package skeleton: `config/`, `common/`, `auth/`, `user/`, `workspace/`, `project/`, `task/`, `board/`, `timeline/` with placeholder config classes).
+

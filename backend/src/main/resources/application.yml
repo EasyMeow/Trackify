@@ -1,0 +1,65 @@
+spring:
+  application:
+    name: trackify-backend
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
+  datasource:
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+    hikari:
+      pool-name: trackify-hikari
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+  session:
+    store-type: ${SPRING_SESSION_STORE_TYPE:jdbc}
+    jdbc:
+      initialize-schema: never
+      table-name: SPRING_SESSION
+    timeout: ${SERVER_SERVLET_SESSION_TIMEOUT:PT8H}
+
+server:
+  port: ${SERVER_PORT:8080}
+  error:
+    include-message: always
+    include-binding-errors: always
+  servlet:
+    session:
+      timeout: ${SERVER_SERVLET_SESSION_TIMEOUT:PT8H}
+      cookie:
+        name: ${SERVER_SERVLET_SESSION_COOKIE_NAME:TRACKIFY_SESSION}
+        http-only: ${SERVER_SERVLET_SESSION_COOKIE_HTTP_ONLY:true}
+        secure: ${SERVER_SERVLET_SESSION_COOKIE_SECURE:true}
+        same-site: ${SERVER_SERVLET_SESSION_COOKIE_SAME_SITE:lax}
+
+trackify:
+  cors:
+    allowed-origin: ${FRONTEND_ORIGIN}
+    allowed-methods: GET,POST,PUT,PATCH,DELETE,OPTIONS
+    allowed-headers: "*"
+    allow-credentials: true
+  auth:
+    password:
+      encoder-strength: ${AUTH_PASSWORD_ENCODER_STRENGTH:10}
+      min-length: ${AUTH_PASSWORD_MIN_LENGTH:8}
+    bootstrap:
+      admin:
+        login: ${AUTH_BOOTSTRAP_ADMIN_LOGIN:}
+        email: ${AUTH_BOOTSTRAP_ADMIN_EMAIL:}
+        password: ${AUTH_BOOTSTRAP_ADMIN_PASSWORD:}
+
+logging:
+  level:
+    root: INFO
+    com.trackify: INFO
+    org.springframework.security: INFO
