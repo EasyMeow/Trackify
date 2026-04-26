@@ -1376,3 +1376,32 @@ Follow-up risk / notes:
 - The 240px-min-width grid template is a reasonable guess based on the design tokens. If a project has a very long name, the card grows vertically without overflow handling. TASK-078 (loading/empty/error states) is the natural place to harden text overflow if needed.
 - Could not run a full browser E2E (no seeded users + no .env). The login + workspace bootstrap path is already covered by backend tests (UserRegistrationServiceTest, WorkspaceBootstrapServiceTest) and the project read path by ProjectControllerTest, so the wire format is contract-tested even without a live click-through.
 - Next pending task: TASK-043 — Add create-project UI. It will reuse projectApi (extend with a create method), wire to useMutation with queryClient.invalidateQueries on the same ['workspaces', workspaceId, 'projects'] key, and replace the empty-state copy with a real form/modal. The query-key shape chosen in TASK-042 makes the invalidation a one-liner.
+
+================================================================================
+TASK-043 — Add create-project UI
+Date: 2026-04-27
+================================================================================
+
+What changed:
+- frontend/src/modules/project/api/projectApi.ts: added `ProjectCreateRequest` interface (name, optional slug, optional description) and `create(workspaceId, request)` method. POSTs to `/workspaces/${workspaceId}/projects`. Strips empty/blank slug and description before sending so the server always derives the slug from the name when the user leaves those fields blank.
+- frontend/src/modules/project/hooks/useCreateProject.ts (new): TanStack Query `useMutation` hook wrapping `projectApi.create`. On success, invalidates `['workspaces', workspaceId, 'projects']` (exact key from useProjects) so the project list refreshes automatically. Guards against undefined workspaceId by rejecting the promise early.
+- frontend/src/pages/DashboardPage.tsx: added `CreateProjectForm` component (co-located function component; only consumer is this page). Renders above the project list whenever a workspace is selected. Controlled inputs for name and description, local useState for draft values (architecture.md §6: form drafts are local state). Disables submit while pending or name blank. Calls mutate with trimmed values; omits description when blank. Resets form on success. Surfaces `ApiError.message` (or generic string) inline in red below the description field. Replaced empty-state copy "No projects yet. Project creation lands in TASK-043." with "No projects yet."
+
+What was tested:
+- `cd frontend && npm run build` → BUILD SUCCESS. tsc -b strict clean; vite built 95 modules (was 94), 334 kB bundle, no warnings.
+- `npm run lint` → only the 2 pre-existing react-refresh errors in src/app/routes.tsx. Zero new errors.
+- Could not perform a full browser E2E (no .env / seeded DB users). Verified wire-format contract by reading ProjectCreateRequest record (name @NotBlank max255, slug optional max255, description optional max2000) and ProjectResponse fields against the Project interface — no drift. POST /api/workspaces/{workspaceId}/projects endpoint confirmed shipped in TASK-041.
+
+Design choices:
+- Inline form (no modal). The task acceptance criteria says "small create-project form or modal"; an always-visible inline form is simpler, avoids a modal state machine, and suits an MVP dashboard. Can be promoted to a modal by TASK-078/polish tasks.
+- `reset()` called inside `onSuccess` callback of `mutate(...)`, not in the mutation's `onSuccess` option, so the form only clears after the specific call that succeeded (handles multiple rapid submits safely).
+- Description field is a single-line `<input>` not a `<textarea>`. The Project interface allows up to 2000 chars but the MVP card display is one-line text, and a textarea adds layout complexity with no benefit at this stage.
+- `ApiError` import from httpClient used for `instanceof` check — gives the exact server message (e.g. "Slug already exists in this workspace") rather than a generic fallback.
+- `submitButtonDisabledStyle` is a spread of `submitButtonStyle` with opacity+cursor override — avoids a second class/object diverging from the base style.
+- Co-located `CreateProjectForm` in DashboardPage (not extracted to modules/project/components). Zero other consumers; extraction would be premature (same rationale as ProjectCard in TASK-042).
+
+Follow-up risk / notes:
+- Description input is capped at `maxLength={2000}` on the HTML element. The input is `type="text"` not textarea so it won't wrap. If a future task adds a rich description editor, this input needs replacing.
+- Slug is not exposed in the form. The server derives it deterministically. If two projects in the same workspace have names that map to the same slug (e.g., "My App" and "My  App"), the form will show the API's 409 CONFLICT message inline. User can then pick a different name. No slug-collision UX beyond the inline error is needed for MVP.
+- No optimistic update — mutation uses `invalidateQueries` on success (refetch). Adequate latency for MVP; if needed, TASK-078 polish can add optimistic insertion.
+- Browser E2E untested due to missing .env / unseeded DB. Next developer task (TASK-044) is backend; once the full stack is runnable, a full E2E click-through should be included in a subsequent frontend polish task.
