@@ -1130,3 +1130,37 @@ Design choices:
 Follow-up risk / notes:
 - The `WorkspaceResponse` DTO does not expose the user's role in that workspace. TASK-076 (authz checks) will need role information; it should add a separate query path rather than expanding `WorkspaceResponse` (keep the list response lean, add a detail/membership endpoint later).
 - Next pending task: TASK-036 (frontend workspace query and types). TASK-035 provides the endpoint TASK-036 will call.
+
+
+================================================================================
+TASK-036 — Add frontend workspace query and types
+Date: 2026-04-27
+================================================================================
+
+What changed:
+- `frontend/src/modules/workspace/types/workspace.ts` (new): `Workspace` interface mirroring the backend `WorkspaceResponse` DTO from TASK-035 — `id`, `name`, `slug`, all strings (`id` is a UUID string on the wire, no need to model it as anything richer for the UI). No `ownerId` or timestamps; the backend deliberately doesn't ship those, and the UI hooks shouldn't model fields it doesn't receive.
+- `frontend/src/modules/workspace/api/workspaceApi.ts` (new): `workspaceApi` object with one method, `list(): Promise<Workspace[]>`, calling `httpClient.get<Workspace[]>('/workspaces')`. Mirrors the existing `authApi` pattern (`frontend/src/modules/auth/api/authApi.ts`). Uses the shared `httpClient` so the `credentials: 'include'` cookie behavior is preserved — no direct `fetch`.
+- `frontend/src/modules/workspace/hooks/useWorkspaces.ts` (new): TanStack Query hook wrapping `workspaceApi.list()` with stable query key `['workspaces']`. `useQuery<Workspace[]>` so the result type flows through to consumers without `any`.
+- `frontend/src/pages/DashboardPage.tsx` (modified): consumes `useWorkspaces()`. Renders "Loading workspaces…" while pending and a count once data arrives ("N workspaces" with a tiny pluralization). Both states are cosmetic placeholders that TASK-037 (workspace switcher) and TASK-042 (dashboard project list) will replace. The point of the consumer is to prove the hook is wired through to a page — the test step requires it explicitly.
+
+What was tested:
+- `cd frontend && npm run build` (the explicit task `test_step`): BUILD SUCCESS. `tsc -b && vite build`, 91 modules transformed, 326.84 kB JS bundle, no TypeScript errors, no warnings. Build time 75ms.
+- Verified the hook is consumed: `DashboardPage.tsx` imports `useWorkspaces` from the new hook file (line 1) and calls it (line 4). Grep confirms the import is the only one in the codebase, so the consumer is real and not dead code.
+- Manual file inspection: `httpClient` already sends `credentials: 'include'` (httpClient.ts line 27), so the workspace request will carry the session cookie correctly.
+
+Design choices:
+- Mirror `authApi`'s shape exactly (an exported object literal with named methods, not a function-per-export). This is the established convention for API helpers in this repo. Keeping the convention uniform makes it trivial to grep call sites and to add `create`/`get`/`update` methods later when TASK-041, TASK-042, TASK-043 land.
+- Query key is the literal `['workspaces']`. No user-id parameterization on the key because the workspace list is *always* the current authenticated user's workspaces — there is no other variant the backend will ever return. If the user changes (login/logout), `AuthProvider` should already invalidate or reset the query cache; that's TASK-030's territory, not TASK-036's. Adding a synthetic key like `['workspaces', userId]` would only matter if the cache survived across logins, which it should not.
+- `useQuery<Workspace[]>` typed at the call site, not on `workspaceApi.list()` only. Both type the same value but the hook generic makes the cached `data` type explicit at every consumer. Cheap insurance against `any` leaking through if `workspaceApi.list()` ever loses its return type.
+- Consumed in `DashboardPage.tsx`, not `AppShell.tsx`. The architecture has the workspace switcher landing in `AppShell` (TASK-037), so wiring `useWorkspaces` into `AppShell` now would either preempt TASK-037's UI or leave `AppShell` calling the hook without rendering anything visible from it. The dashboard page already shows a TASK-042/-043 placeholder, so adding a "loading workspaces…" / count line there is a natural minimum-viable consumer that TASK-042 will replace cleanly.
+- No `enabled` flag, no `staleTime`/`gcTime` overrides, no `select` transformer. The endpoint is fast, the data is small, and the QueryClient defaults are fine. Adding configuration without a measured reason is exactly the premature-abstraction trap CLAUDE.md flags.
+- No Zustand store for workspace selection. That belongs to TASK-037 (workspace switcher needs a *currently-selected* workspace, which is genuinely cross-cutting) — `useWorkspaces` itself is pure server state and lives in TanStack Query only, per CLAUDE.md's state-boundary rules.
+- No `useWorkspace(id)` single-fetch hook. There's no backend endpoint for it (no `GET /api/workspaces/{id}`), and the list-then-find pattern composes from `useWorkspaces` if a future task needs a single workspace. Adding it now would be speculative.
+- No barrel `index.ts` export. Both modules in `auth/` use deep imports (`../auth/hooks/useAuth`, `../auth/api/authApi`); matching that convention keeps grep-discoverability and avoids a redundant re-export layer.
+
+Follow-up risk / notes:
+- Cache invalidation on logout is not exercised here. If a user logs out and back in as a different user, the TanStack Query cache for `['workspaces']` would still hold the previous user's list until the staleTime expires. The fix is `queryClient.removeQueries({ queryKey: ['workspaces'] })` (or `clear()`) in the logout flow — that belongs to whichever task hardens logout/auth state transitions, not TASK-036. Worth flagging for TASK-037 since it'll be the first task that visibly depends on per-user freshness.
+- No error UI. If `/api/workspaces` 5xx's, `useWorkspaces()` exposes `isError`/`error` but `DashboardPage` ignores them; only `isLoading` and `data` render. TASK-078 (loading/empty/error states across core screens) is the canonical home for that. Until then, an error currently shows nothing on the dashboard. Acceptable for TASK-036 — adding error UI now would either be thrown away or become a half-finished implementation that TASK-078 has to merge with.
+- The placeholder text in `DashboardPage` is meant to be replaced. TASK-042 will render the project list and TASK-043 the create-project flow; the "N workspaces" line is a minimum-viable consumer, not a UX decision. The TASK-042 implementer should expect to delete or restructure it without ceremony.
+- No tests added. The task's `test_steps` is `npm run build` only. No automated frontend tests have been added to this codebase yet (auth module has none either) — adding a Vitest or React Testing Library setup would be net-new infrastructure outside TASK-036's scope. TASK-082 (manual smoke checklist) and TASK-083 (smoke pass) are the canonical places for end-to-end UI validation.
+- Next pending task: TASK-037 (render the workspace switcher in `AppShell`). Will consume `useWorkspaces` directly and likely introduce a small Zustand store for the *selected* workspace id (or push it into the URL). The hook from TASK-036 is the data source; the selection state is the new concern.
