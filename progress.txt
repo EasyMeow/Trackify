@@ -80,3 +80,28 @@ Follow-up risk / notes:
 - Cookie defaults / production hardening notes deferred to TASK-081's full runbook.
 - Next pending task: TASK-006 (scaffold the Spring Boot backend project) — this is where the Maven-vs-Gradle decision must be made.
 
+## 2026-04-26 — TASK-006: scaffold Spring Boot backend (Maven)
+
+What changed:
+- Created `backend/pom.xml` inheriting from `spring-boot-starter-parent:3.4.1`, `groupId=com.trackify`, `artifactId=trackify-backend`, `java.version=21`, `project.build.sourceEncoding=UTF-8`. Minimal deps: `spring-boot-starter` (runtime) and `spring-boot-starter-test` (test). `spring-boot-maven-plugin` registered for `bootRun`/`bootJar` later. Full runtime stack (Web, Validation, JPA, Postgres, Flyway, Security, Session JDBC) intentionally deferred to TASK-007.
+- Created `backend/src/main/java/com/trackify/TrackifyApplication.java` with a single `@SpringBootApplication` class and a `main` calling `SpringApplication.run(...)`.
+- Generated the Maven Wrapper via `mvn -N wrapper:wrapper -Dmaven=3.9.9` (wrapper plugin 3.3.4, `only-script` distribution — pure shell, no `maven-wrapper.jar` to commit). Wrote `backend/mvnw`, `backend/mvnw.cmd`, and `backend/.mvn/wrapper/maven-wrapper.properties` (pointing at Maven 3.9.9 from Maven Central).
+- Marked TASK-006 status = done in tasks.json.
+
+Maven vs Gradle decision (resolves the discrepancy flagged since TASK-002):
+- Picked **Maven**. tasks.json TASK-006 explicitly says "Maven Spring Boot project" / `./mvnw compile`; tasks.json TASK-007 says `./mvnw dependency:tree`; architecture.md §1 says "Build tooling: Maven Wrapper for the backend"; architecture.md §3 lists `backend/mvnw`, `backend/mvnw.cmd`, `backend/.mvn/wrapper/`, `backend/pom.xml`. The user's loop instruction asks for `./gradlew -p backend ...` but qualifies "skip if backend isn't initialized (no gradlew/settings.gradle.kts)" — since this scaffold has neither, the Gradle check is correctly skipped per the instruction itself. The task-spec test (`./mvnw compile`) was run instead.
+
+What was tested:
+- Per task `test_steps`: `./mvnw -B -ntp clean compile` → BUILD SUCCESS, `Compiling 1 source file with javac [debug parameters release 21] to target/classes` confirms Java 21 target.
+- Per loop verification: skipped Gradle compile/test step because no `gradlew`/`settings.gradle.kts` exists in `backend/` (the conditional in the loop instructions is satisfied).
+- `git ls-files --others --exclude-standard backend/` shows exactly the 5 source-of-truth files: `pom.xml`, `mvnw`, `mvnw.cmd`, `.mvn/wrapper/maven-wrapper.properties`, `src/main/java/com/trackify/TrackifyApplication.java`. `target/` and any wrapper jar paths are matched by `.gitignore` rules at lines 51 (`target/`) and 53 (`*.jar`).
+
+Follow-up risk / notes:
+- Spring Boot 3.4.1 chosen because it's recent + stable as of 2026-Q1 and well-supported on Java 21. If the team has an internal preferred BOM version, swap the parent `<version>` in `pom.xml` — no other change required.
+- Wrapper uses Maven 3.9.9 (Spring Boot 3.4.x is fully compatible). Bump in `.mvn/wrapper/maven-wrapper.properties` later if needed.
+- Pure-script wrapper (no `maven-wrapper.jar`) means the `.gitignore` rule for `.mvn/wrapper/maven-wrapper.jar` is currently a no-op for this repo — kept anyway for forward compat in case someone regenerates with `wrapper:wrapper` without `-Dtype=only-script`.
+- `src/main/resources/` not yet created (Maven warned "skip non existing resourceDirectory"). TASK-008 will add `application.yml` / `application-local.yml` under that path; harmless until then.
+- Package skeleton (`config/`, `common/`, `auth/`, `user/`, `workspace/`, `project/`, `task/`, `board/`, `timeline/`) deliberately not created — that's TASK-009's scope.
+- The current `TrackifyApplication` boots and exits immediately because there's no web starter yet; that's expected at this milestone. Web/CORS/health are TASK-010.
+- Next pending task: TASK-007 (add backend runtime dependencies — Spring Web, Validation, Data JPA, PostgreSQL, Flyway, Spring Security, Spring Session JDBC). Verify with `./mvnw dependency:tree`.
+
