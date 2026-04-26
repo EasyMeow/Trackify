@@ -367,3 +367,38 @@ Follow-up risk / notes:
 - **TanStack Query devtools NOT installed** — `@tanstack/react-query-devtools` is a separate optional package. TASK-018 will decide whether to add it (typically yes for dev ergonomics, gated behind `import.meta.env.DEV`). Out of TASK-014 scope.
 - Next pending task: TASK-015 (create the frontend folder skeleton: `src/{app,pages,modules,shared}` with planned subfolders and placeholder files). The library install in this task means TASK-015 placeholders can already import from `react-router-dom`, `@tanstack/react-query`, etc. without additional setup.
 
+
+================================================================================
+TASK-015 — Create the frontend folder skeleton
+Date: 2026-04-26
+================================================================================
+
+What changed:
+- Created `src/app/` with `routes.tsx`, `providers/{QueryProvider,AuthProvider,ThemeProvider}.tsx`, and `layouts/{AppShell,AuthLayout}.tsx`.
+- Created `src/pages/` with `{SignInPage,DashboardPage,ProjectBoardPage,ProjectTimelinePage,ProjectSettingsPage}.tsx`.
+- Created `src/modules/` with `auth`, `workspace`, `project`, `task`, `kanban`, `gantt`, `comment` and the planned subfolders inside each (`api/`, `components/`, `hooks/`, etc. per architecture.md §3). Empty leaf folders use `.gitkeep` so git tracks them.
+- Created `src/shared/` with `api/{httpClient,queryKeys}.ts`, `components/{Button,Modal,Drawer,Avatar,EmptyState}.tsx`, `styles/{tokens,globals,components}.css`, plus empty `hooks/`, `lib/`, `types/` (each with `.gitkeep`).
+- Did NOT touch existing `src/App.tsx`, `src/main.tsx`, `src/App.css`, `src/index.css`, or `src/assets/`. The Vite starter is still the running entry — TASK-016/017/018/019/020 will replace it. Keeping it intact means the build keeps working with no behaviour change.
+
+What was tested:
+- Per task `test_steps`: `npm run build` → `tsc -b` clean (0 errors) and `vite build` → `✓ 20 modules transformed`, `✓ built in 68ms`. Bundle size unchanged (placeholders aren't imported anywhere yet, so they're tree-shaken out).
+- Verified folders on disk via `ls -la src/{app,pages,modules,shared}` and confirmed every subfolder from architecture.md §3 is present.
+- Skipped backend gradle step: this is a frontend-only task and backend is on Maven (TASK-006 decision).
+
+Design choices and trade-offs:
+- **Placeholder content style**: every `.tsx` exports either a no-op functional component returning `null` or a Provider that just renders `{children}` via a fragment. Reasoning: the strict tsconfig (`noUnusedLocals`, `noUnusedParameters`, `verbatimModuleSyntax`, `moduleDetection: force`) rejects empty files and bare `export {}` in some setups. A functional component with a typed prop is the cheapest valid scaffold and gives later tasks (TASK-016+) a real entry point to fill in instead of a re-create.
+- **`import type { ReactNode } from 'react'`** on providers/layouts: required by `verbatimModuleSyntax: true`. This is the codebase convention going forward — type imports must be marked.
+- **`.gitkeep` for empty leaf folders** (e.g. `modules/auth/api/`): folders with no source files yet still need to exist because architecture.md §3 names them and TASK-018+ will populate them. `.gitkeep` is the standard way; it's not a TS file so it's invisible to the build.
+- **Did NOT pre-fill `tokens.css` / `globals.css` content**: that's literally TASK-016's job. Files exist as empty stubs with one comment so TASK-016 can simply replace their bodies.
+- **Did NOT wire `App.tsx` to live in `src/app/App.tsx` yet**: architecture.md §3 shows it there, but TASK-019/020 are the natural moment to migrate the entry — that's when the real router and providers replace the Vite starter. Moving `App.tsx` now would either (a) break the import in `main.tsx` or (b) require touching `main.tsx` and the Vite starter content, which goes outside TASK-015's "skeleton + placeholder files" scope.
+- **Placeholder `httpClient.ts` is `export const httpClient = {}`, not the real fetch wrapper**: TASK-020 owns the real implementation (`credentials: "include"`, error handling, etc.). Stub-now / fill-later keeps TASK-015 boundary clean.
+
+Follow-up risk / notes:
+- **TASK-016 will need to wire `tokens.css` / `globals.css` into the bundle** by importing them from `main.tsx` (or from `ThemeProvider.tsx` once that's real). They're currently sitting on disk but not in the import graph, so they don't ship.
+- **TASK-017 will replace the placeholder `ThemeProvider.tsx`** — current body is just a fragment passthrough, which is intentionally trivial.
+- **TASK-018 same for `QueryProvider.tsx`** — placeholder needs replacing with a real `QueryClientProvider` and a configured `QueryClient`.
+- **TASK-019 will replace the placeholder `routes.tsx`** with a real route tree and likely import the page components from `src/pages/` — those imports will work because the files exist as default exports.
+- **TASK-020 will replace `httpClient.ts`** and add `AuthLayout` / `AppShell` real implementations.
+- **`main.tsx` still imports from `./App.tsx` (Vite starter)**: this is a pending migration that TASK-019 or TASK-020 will handle. The starter UI will continue to render until then — that's fine per the dependency chain (017/018/019 all use `npm run build` as the verification, not visual confirmation, until TASK-019 explicitly checks routes load).
+- **No new packages installed**, no `package.json` change, no Postgres / backend touched. Strictly skeleton creation.
+- Next pending task: TASK-016 (add global style tokens — pastel mint/green theme in `tokens.css` / `globals.css`).
