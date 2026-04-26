@@ -105,3 +105,25 @@ Follow-up risk / notes:
 - The current `TrackifyApplication` boots and exits immediately because there's no web starter yet; that's expected at this milestone. Web/CORS/health are TASK-010.
 - Next pending task: TASK-007 (add backend runtime dependencies — Spring Web, Validation, Data JPA, PostgreSQL, Flyway, Spring Security, Spring Session JDBC). Verify with `./mvnw dependency:tree`.
 
+## 2026-04-26 — TASK-007: backend runtime dependencies
+
+What changed:
+- Replaced the lone `spring-boot-starter` in `backend/pom.xml` with the full runtime stack required by architecture.md §6: `spring-boot-starter-web` (web/Tomcat/Jackson — pulls in `spring-boot-starter` transitively), `spring-boot-starter-validation` (Hibernate Validator + Jakarta Validation), `spring-boot-starter-data-jpa` (Hibernate ORM 6.6.4 + Spring Data JPA + HikariCP + JDBC), `spring-boot-starter-security` (Spring Security 6.4.2), `org.postgresql:postgresql` at `runtime` scope (driver only, version managed by Boot BOM → 42.7.4), `org.flywaydb:flyway-core` 10.20.1, `org.flywaydb:flyway-database-postgresql` 10.20.1 (required separately starting Flyway 10 for Postgres support), and `org.springframework.session:spring-session-jdbc` 3.4.1 (matches the Boot version managed by the BOM).
+- Added `org.springframework.security:spring-security-test` at `test` scope so future MockMvc-based auth tests (TASK-024, TASK-027, TASK-028, TASK-029, etc.) can use `@WithMockUser` / `SecurityMockMvcRequestPostProcessors` without further pom edits.
+- All version numbers (except the two Flyway artifacts, which Boot BOM 3.4.1 does manage) are inherited from `spring-boot-starter-parent` 3.4.1; no explicit `<version>` tags added to the new entries.
+- Marked TASK-007 status = done in tasks.json.
+
+What was tested:
+- Per task `test_steps`: `./mvnw -B -ntp dependency:tree` from `backend/` → BUILD SUCCESS in 19.6s. Tree confirms each required artifact resolved at the expected versions: `spring-boot-starter-web:3.4.1`, `spring-boot-starter-validation:3.4.1` (→ `hibernate-validator:8.0.2.Final`, `jakarta.validation-api:3.0.2`), `spring-boot-starter-data-jpa:3.4.1` (→ `hibernate-core:6.6.4.Final`, `spring-data-jpa:3.4.1`, `HikariCP:5.1.0`), `spring-boot-starter-security:3.4.1` (→ `spring-security-config:6.4.2`, `spring-security-web:6.4.2`), `postgresql:42.7.4` (runtime), `flyway-core:10.20.1`, `flyway-database-postgresql:10.20.1`, `spring-session-jdbc:3.4.1` (→ `spring-session-core:3.4.1`).
+- Sanity check: `./mvnw -B -ntp compile` → BUILD SUCCESS. Existing `TrackifyApplication` still compiles cleanly with the swapped starter (web supersedes plain starter).
+- Skipped Gradle compile/test step from the loop instructions per the conditional in those instructions: backend has no `gradlew`/`settings.gradle.kts`. Maven is the source of truth (architecture.md §1, tasks.json TASK-006/007 verbiage). This was already reconciled in TASK-006.
+
+Follow-up risk / notes:
+- App now boots with web autoconfig active but no `DataSource` config, so `./mvnw spring-boot:run` would fail with "Failed to configure a DataSource" because JPA's auto-config sees no `spring.datasource.url`. That is intentional at this milestone — TASK-008 adds `application.yml` / `application-local.yml` with placeholders, and TASK-012 wires Flyway + a baseline migration so the app can actually start. Not running `spring-boot:run` here was deliberate; the task spec only requires `dependency:tree`.
+- Spring Security on the classpath without any `SecurityFilterChain` bean will, on first run, default to HTTP Basic + a generated password printed to console. Acceptable until TASK-024 replaces it with the explicit filter chain.
+- Spring Session JDBC will look for `SPRING_SESSION` / `SPRING_SESSION_ATTRIBUTES` tables once `spring.session.store-type=jdbc` is set; right now no profile sets it, so the auto-config is dormant. TASK-023 owns the schema + config wiring.
+- Flyway 10.x split out database modules — `flyway-core` alone won't recognize Postgres at runtime in newer versions, hence the explicit `flyway-database-postgresql`. If we ever downgrade Flyway below 10, that artifact can be removed.
+- `spring-security-test` added proactively rather than in TASK-024 to avoid touching `pom.xml` again for a one-line dep; harmless at compile time and `test`-scoped.
+- No code changes outside `pom.xml`. Package skeleton (TASK-009), config files (TASK-008), CORS/health endpoint (TASK-010), error handler (TASK-011), and Flyway baseline (TASK-012) are all still pending and remain TASK-008+'s scope.
+- Next pending task: TASK-008 (`application.yml` + `application-local.yml` with datasource/session/auth/CORS/server.port placeholders).
+
