@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { WorkspaceSwitcher } from '../../modules/workspace/components/WorkspaceSwitcher';
 
 export function AppShell({ children }: { children: ReactNode }) {
   return (
@@ -31,15 +32,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         >
           Trackify
         </span>
-        <p
-          style={{
-            fontSize: 'var(--font-size-sm)',
-            color: 'var(--color-text-subtle)',
-            margin: 0,
-          }}
-        >
-          Workspace switcher — TASK-037
-        </p>
+        <WorkspaceSwitcher />
         <div style={{ marginTop: 'auto' }}>
           <p
             style={{
