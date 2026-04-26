@@ -1405,3 +1405,38 @@ Follow-up risk / notes:
 - Slug is not exposed in the form. The server derives it deterministically. If two projects in the same workspace have names that map to the same slug (e.g., "My App" and "My  App"), the form will show the API's 409 CONFLICT message inline. User can then pick a different name. No slug-collision UX beyond the inline error is needed for MVP.
 - No optimistic update — mutation uses `invalidateQueries` on success (refetch). Adequate latency for MVP; if needed, TASK-078 polish can add optimistic insertion.
 - Browser E2E untested due to missing .env / unseeded DB. Next developer task (TASK-044) is backend; once the full stack is runnable, a full E2E click-through should be included in a subsequent frontend polish task.
+
+## 2026-04-27 — TASK-044: Add board-column schema and persistence
+
+Files added:
+- `backend/src/main/resources/db/migration/V6__board_columns.sql`
+- `backend/src/main/java/com/trackify/board/domain/BoardColumn.java`
+- `backend/src/main/java/com/trackify/board/infrastructure/BoardColumnRepository.java`
+
+Schema choices:
+- UUID PK with `gen_random_uuid()` default, matching V4/V5 style.
+- `project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE` — dropping a project cascades to its columns automatically.
+- `name TEXT NOT NULL` — consistent with how workspace/project names are stored.
+- `position INTEGER NOT NULL` — deterministic left-to-right ordering.
+- `UNIQUE (project_id, position)` named `board_columns_project_position_unique` — prevents duplicate ordering within a project and serves as the natural key for re-order operations.
+- `CREATE INDEX board_columns_project_id_idx` — mirrors V5 style; supports fast column fetches per project when the UNIQUE index cannot be used directly as a covering index.
+- `created_at` / `updated_at TIMESTAMPTZ NOT NULL DEFAULT now()` — identical to V4/V5.
+
+Entity decisions:
+- `BoardColumn.java` in `com.trackify.board.domain` mirrors `Project.java`: private fields, package-private default constructor for JPA, public constructor for creation, `@PrePersist`/`@PreUpdate` for timestamps, getters for all fields, setters only for mutable fields (`name`, `position`).
+- `project_id` stored as opaque UUID (no `@ManyToOne`) per architecture.md §7 modular monolith — avoids cross-module JPA coupling.
+
+Repository:
+- `BoardColumnRepository extends JpaRepository<BoardColumn, UUID>` in `com.trackify.board.infrastructure`.
+- Single finder added: `findByProjectIdOrderByPositionAsc(UUID projectId)` — the minimum needed for the board read path and to compile cleanly.
+- No additional finders added; these will come in TASK-045/board read tasks.
+
+What was tested:
+- `./mvnw compile test-compile` — BUILD SUCCESS, 87 source files compiled.
+- `./mvnw test` — BUILD SUCCESS, Tests run: 37, Failures: 0, Errors: 0, Skipped: 0.
+
+Deliberately deferred to TASK-045 and later:
+- Default-column seeding (auto-creating Todo/In Progress/Done when a project is created).
+- Board read/write controllers and application services.
+- DTOs for column responses.
+- No controllers, services, DTOs, or default-column seeding were added in this task.
