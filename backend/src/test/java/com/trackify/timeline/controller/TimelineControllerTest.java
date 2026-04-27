@@ -13,6 +13,7 @@ import com.trackify.common.exception.NotFoundException;
 import com.trackify.config.JacksonConfig;
 import com.trackify.config.SecurityConfig;
 import com.trackify.config.WebConfig;
+import com.trackify.task.dto.DependencyResponse;
 import com.trackify.timeline.application.TimelineService;
 import com.trackify.timeline.dto.TimelineResponse;
 import com.trackify.timeline.dto.TimelineTaskResponse;
@@ -27,16 +28,18 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
 /**
- * TASK-067: verifies {@code GET /api/projects/{projectId}/timeline} behaviour.
+ * TASK-067 / TASK-073: verifies {@code GET /api/projects/{projectId}/timeline} behaviour.
  *
  * <ul>
- *   <li>Happy path — member receives timeline with task ids, titles, start dates, and due dates.
- *   <li>Empty project — timeline is returned with empty task list.
+ *   <li>Happy path — member receives timeline with task ids, titles, start dates, due dates,
+ *       and the dependency edge list (TASK-073).
+ *   <li>Empty project — timeline is returned with empty task and dependency lists.
  *   <li>Non-member — service throws {@link ForbiddenException}, response is 403.
  *   <li>Missing project — service throws {@link NotFoundException}, response is 404.
  *   <li>Unauthenticated — Spring Security rejects with 401 before controller runs.
@@ -83,7 +86,7 @@ class TimelineControllerTest {
         TimelineTaskResponse taskRow = new TimelineTaskResponse(
                 taskId, "Build timeline endpoint", "IN_PROGRESS", "HIGH", start, due);
 
-        TimelineResponse response = new TimelineResponse(projectId, List.of(taskRow));
+        TimelineResponse response = new TimelineResponse(projectId, List.of(taskRow), List.of());
         when(timelineService.getTimeline(projectId, userId)).thenReturn(response);
 
         mockMvc.perform(get("/api/projects/{projectId}/timeline", projectId).with(auth(userId)))
@@ -95,7 +98,8 @@ class TimelineControllerTest {
                 .andExpect(jsonPath("$.tasks[0].status").value("IN_PROGRESS"))
                 .andExpect(jsonPath("$.tasks[0].priority").value("HIGH"))
                 .andExpect(jsonPath("$.tasks[0].startDate").value("2026-04-01"))
-                .andExpect(jsonPath("$.tasks[0].dueDate").value("2026-04-30"));
+                .andExpect(jsonPath("$.tasks[0].dueDate").value("2026-04-30"))
+                .andExpect(jsonPath("$.dependencies.length()").value(0));
     }
 
     @Test
@@ -103,13 +107,46 @@ class TimelineControllerTest {
         UUID userId = UUID.randomUUID();
         UUID projectId = UUID.randomUUID();
 
-        TimelineResponse response = new TimelineResponse(projectId, List.of());
+        TimelineResponse response = new TimelineResponse(projectId, List.of(), List.of());
         when(timelineService.getTimeline(projectId, userId)).thenReturn(response);
 
         mockMvc.perform(get("/api/projects/{projectId}/timeline", projectId).with(auth(userId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.projectId").value(projectId.toString()))
-                .andExpect(jsonPath("$.tasks.length()").value(0));
+                .andExpect(jsonPath("$.tasks.length()").value(0))
+                .andExpect(jsonPath("$.dependencies.length()").value(0));
+    }
+
+    @Test
+    void timelineIncludesDependencyEdges() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+        UUID predecessorId = UUID.randomUUID();
+        UUID successorId = UUID.randomUUID();
+        UUID dependencyId = UUID.randomUUID();
+        Instant createdAt = Instant.parse("2026-04-28T10:15:30Z");
+
+        LocalDate start = LocalDate.of(2026, 4, 1);
+        LocalDate due = LocalDate.of(2026, 4, 30);
+
+        TimelineTaskResponse predecessor = new TimelineTaskResponse(
+                predecessorId, "Predecessor", "TODO", "MEDIUM", start, due);
+        TimelineTaskResponse successor = new TimelineTaskResponse(
+                successorId, "Successor", "TODO", "MEDIUM", start, due);
+        DependencyResponse edge = new DependencyResponse(dependencyId, predecessorId, successorId, createdAt);
+
+        TimelineResponse response = new TimelineResponse(
+                projectId, List.of(predecessor, successor), List.of(edge));
+        when(timelineService.getTimeline(projectId, userId)).thenReturn(response);
+
+        mockMvc.perform(get("/api/projects/{projectId}/timeline", projectId).with(auth(userId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tasks.length()").value(2))
+                .andExpect(jsonPath("$.dependencies.length()").value(1))
+                .andExpect(jsonPath("$.dependencies[0].id").value(dependencyId.toString()))
+                .andExpect(jsonPath("$.dependencies[0].predecessorTaskId").value(predecessorId.toString()))
+                .andExpect(jsonPath("$.dependencies[0].successorTaskId").value(successorId.toString()))
+                .andExpect(jsonPath("$.dependencies[0].createdAt").exists());
     }
 
     @Test

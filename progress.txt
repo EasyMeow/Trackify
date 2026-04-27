@@ -2539,3 +2539,103 @@ Modified:
 - **Mutation error leaves bar in wrong position.** If the PATCH 4xx/5xx, the timeline query invalidation fires but the bar may flicker briefly in the dragged position before the refetch restores it. Acceptable until a global error/toast layer (TASK-078) is added.
 - **`gantt-task-react` resize handle target area.** Some versions of the library have a very narrow resize handle (2–3 px). Not a defect here — this is a library ergonomics issue, potentially addressed by a CSS override in a future polish task.
 - **No loading indicator during mutation.** `scheduleTask.isPending` is not used to disable the Gantt or show a spinner. A second drag while the first mutation is in-flight will fire a second PATCH; the last writer wins (both hit the same task row). Acceptable for MVP; concurrent drag is an unusual interaction.
+
+
+## 2026-04-27 — TASK-072: Implement dependency create/delete endpoints
+
+### Files added
+
+- `backend/src/main/java/com/trackify/task/dto/CreateDependencyRequest.java` — record `{ predecessorTaskId: UUID }` with `@NotNull` validation. The path's `taskId` is the SUCCESSOR (the task whose dependency list is being edited); the body carries the predecessor.
+- `backend/src/main/java/com/trackify/task/dto/DependencyResponse.java` — wire shape `{ id, predecessorTaskId, successorTaskId, createdAt }`. Will also be the timeline-payload shape consumed by TASK-073.
+- `backend/src/main/java/com/trackify/task/application/TaskDependencyService.java` — `createDependency(successorId, userId, predecessorId)` and `deleteDependency(successorId, userId, dependencyId)`. Authorization via `ProjectQueryService.getById(successor.projectId, userId)` matching the existing TaskCommandService pattern.
+- `backend/src/main/java/com/trackify/task/controller/TaskDependencyController.java` — `@RequestMapping("/api/tasks/{taskId}/dependencies")` with `@PostMapping` (201) and `@DeleteMapping("/{dependencyId}")` (204). Thin pass-through to the service.
+- `backend/src/test/java/com/trackify/task/controller/TaskDependencyControllerTest.java` — 11 `@WebMvcTest` cases covering: create happy path (201), create missing predecessorTaskId (400 VALIDATION_FAILED), create duplicate (409 CONFLICT), create task-not-found (404), create forbidden (403), create cycle rejection (400 BAD_REQUEST), create unauthenticated (401), delete happy path (204), delete not-found (404), delete forbidden (403), delete unauthenticated (401).
+
+### Files modified
+
+- `backend/src/main/java/com/trackify/task/infrastructure/TaskDependencyRepository.java` — added `existsByPredecessorTaskIdAndSuccessorTaskId(UUID, UUID)` derived query for the duplicate-edge pre-check. The DB UNIQUE constraint already prevents duplicates; this is so the controller can return a clean 409 ConflictException rather than a wrapped raw constraint-violation.
+
+### Key design decisions
+
+- **Path's `taskId` is the successor.** The natural read is "open task X, manage what it depends on." Body sends `predecessorTaskId`. This matches typical PM-tool UX and the entity's directional model (`predecessor → successor`). Architecture.md §11 is silent on direction, so this choice ties to the UI flow planned for TASK-075.
+- **Five guards in the service, each chosen for its own reason.**
+  1. *Successor task exists* — 404 NotFoundException; consistent with how every other task-scoped mutation begins.
+  2. *Workspace membership on successor's project* — `ProjectQueryService.getById` returns 404 (project missing) or 403 (not a member). Matches `TaskCommandService.moveTask`/`updateTask`/`scheduleTask`.
+  3. *Predecessor task exists* — 404 with message "Predecessor task not found" so the caller can distinguish from the successor case.
+  4. *Both tasks in same project* — 400. Cross-project dependencies are out of MVP scope; rejecting at the application layer is friendlier than letting the DB FK accept it (which it would, since both reference `tasks(id)`). Also implicitly authorizes the predecessor — caller's membership on the successor's project equals membership on the predecessor's project.
+  5. *Self-loop* — 400 IllegalArgumentException; DB CHECK `predecessor <> successor` also enforces this, but the pre-check produces a friendly message instead of a constraint-violation 500.
+  6. *Duplicate edge* — 409 ConflictException; DB UNIQUE on `(predecessor_task_id, successor_task_id)` also enforces this.
+  7. *Cycle detection* — 400. BFS forward from the proposed successor through outgoing edges; if it reaches the proposed predecessor, the new edge would close a cycle. The graph is a DAG by construction (every prior insert ran the same check), so worst case is O(V + E). The entity's javadoc explicitly references TASK-072 as the home of cycle detection — wiring it here keeps the invariant claimed by `TaskDependency.java` honest.
+- **Delete by edge id, scoped to the path's successor.** A request like `DELETE /api/tasks/A/dependencies/{edgeId}` where the edge's successor is actually B is treated as 404 (not 400). This prevents a caller authenticated against task A from probing the existence of edges on task B. Same shape as how task moves treat a wrong-project columnId, but reusing 404 here is intentional: it's a "you can't see this resource" leak prevention, not a malformed request.
+- **No retry on `DataIntegrityViolationException`.** The duplicate pre-check covers the ordinary path; a race-condition double-insert under concurrent requests would still surface as a 500 rather than a 409. Acceptable for MVP — this is a rare race for a UI-driven endpoint, and adding retry-on-conflict logic would be premature. If real concurrent usage shows up, the fix is a `@ExceptionHandler(DataIntegrityViolationException.class)` mapping to 409, not retry.
+- **No GET endpoint for dependencies.** Architecture.md §11 doesn't list one — dependency reads piggyback on the timeline payload (TASK-073). Adding a separate `GET /api/tasks/{id}/dependencies` would duplicate that read path with no consumer.
+- **Service tests skipped, controller tests only.** TASK-072's acceptance criterion is "controller tests for creating and deleting a dependency." The service's authz path is structurally identical to `TaskCommandService.scheduleTask` (already tested at the controller boundary) and the repository's derived queries don't need explicit tests; cycle detection is the one piece that's distinctly new, but a controller-level test using `IllegalArgumentException` from a stubbed service confirms the wiring. A service-level cycle test could be added later if integration coverage gets prioritized.
+- **CSRF disabled in `SecurityConfig`** — followed the existing test convention (no `.with(csrf())` calls), matching `CommentControllerTest` and `TaskMoveControllerTest`.
+
+### What was tested
+
+- `cd backend && ./mvnw -q compile test-compile` — succeeds with no output.
+- `cd backend && ./mvnw test` — `Tests run: 103, Failures: 0, Errors: 0, Skipped: 0`. The 11 new `TaskDependencyControllerTest` cases pass alongside the existing 92. No regressions in any other test class.
+
+### Follow-up notes for TASK-073 (include dependencies in timeline payload)
+
+- The `TimelineResponse` (in `backend/src/main/java/com/trackify/timeline/dto/`) needs to gain dependency information. Two reasonable shapes:
+  - **(a) Top-level `dependencies: List<DependencyResponse>` array** — single flat list, the frontend mapper indexes it by successor. Cleanest server-side; one extra query (`findByProjectId` if added, or derived from the per-task scan).
+  - **(b) Per-task `successorIds: List<UUID>`** — embeds outgoing edges into each `TimelineTask`. Matches `gantt-task-react`'s `Task.dependencies: string[]` field shape directly so the frontend mapper just copies the field. Requires the timeline service to walk `findByPredecessorTaskId(taskId)` for each task or do one batch query and group by predecessor.
+  - The frontend already documented in TASK-069's follow-up that `gantt-task-react` consumes `dependencies: string[]` per task. Shape (b) maps 1:1; shape (a) needs a frontend transform. Recommend (b) for symmetry with the library — but that's a TASK-073 decision.
+- The `TaskDependencyRepository` now exposes both directional finders (`findByPredecessorTaskId`, `findBySuccessorTaskId`) and an existence check; whichever shape is chosen will be a one-query addition to the timeline service.
+- The `DependencyResponse` DTO is reusable as-is for shape (a). For shape (b), only the UUID list per task is needed; no DTO change required if the IDs are inlined into the existing `TimelineTask` record.
+
+### Follow-up notes for TASK-075 (minimal dependency management UI)
+
+- The frontend will need:
+  - `POST /api/tasks/{taskId}/dependencies` body: `{ "predecessorTaskId": "<uuid>" }`. Returns 201 with `DependencyResponse`. 409 means "already exists" — good UX is to ignore and re-fetch. 400 with message containing "cycle" means the user picked a task that would create a cycle; surface a tooltip/toast.
+  - `DELETE /api/tasks/{taskId}/dependencies/{dependencyId}`. Returns 204. 404 means "edge already gone" — also okay to swallow and refetch.
+- Mutation hooks should invalidate `['projects', projectId, 'timeline']` on success so the Gantt re-renders dependency arrows.
+
+### Follow-up risks
+
+- **Cycle detection iterates the whole reachable subgraph per insert.** For tens of tasks this is instant; for thousands of tasks with dense dependency graphs it could become slow. No risk at MVP scale, but if a future task introduces dependency-heavy projects, replace the BFS with a single recursive CTE query in the repository.
+- **Race condition on simultaneous duplicate inserts.** If two clients POST the same edge at the exact same moment, both pass the existence pre-check, one wins the DB UNIQUE constraint, the other gets a 500 instead of a 409. Acceptable for MVP; mitigation is `@ExceptionHandler(DataIntegrityViolationException.class)` if it ever becomes observable.
+- **`projectId` on the predecessor is trusted via the project-membership check on the successor.** Because the cross-project guard rejects mismatched projects, and the caller has membership on the successor's project, they implicitly have membership on the predecessor's project too. If the cross-project guard is ever loosened (multi-project dependencies), the predecessor authorization must be rechecked separately.
+
+
+## 2026-04-28 — TASK-073: Include dependencies in the timeline payload
+
+### Files modified
+
+- `backend/src/main/java/com/trackify/task/infrastructure/TaskDependencyRepository.java` — added `findByPredecessorTaskIdIn(Collection<UUID> predecessorTaskIds)` derived query. One indexed lookup loads every edge in a project (TASK-072's cross-project guard guarantees the predecessor and successor sit in the same project, so filtering on the predecessor alone is sufficient).
+- `backend/src/main/java/com/trackify/timeline/dto/TimelineResponse.java` — added a top-level `dependencies: List<DependencyResponse>` field. Reuses the existing `DependencyResponse` DTO from TASK-072 instead of inventing a timeline-specific shape.
+- `backend/src/main/java/com/trackify/timeline/application/TimelineService.java` — injected `TaskDependencyRepository`; after loading project tasks, calls `findByPredecessorTaskIdIn(taskIds)` and maps each `TaskDependency` to a `DependencyResponse`. Skips the call entirely when the project has no tasks (avoids an `IN ()` query).
+- `backend/src/test/java/com/trackify/timeline/controller/TimelineControllerTest.java` — updated all `new TimelineResponse(...)` calls to pass `List.of()` for the new dependencies arg, asserted `$.dependencies.length()` on the existing happy-path and empty-project tests, and added `timelineIncludesDependencyEdges()` which verifies a single edge round-trips with all four wire fields (`id`, `predecessorTaskId`, `successorTaskId`, `createdAt`).
+
+### Key design decisions
+
+- **Top-level dependency list, not per-task arrays.** Two layouts were considered: (a) flat `dependencies: List<DependencyResponse>` at the envelope level, (b) per-task `predecessorIds: List<UUID>` field. (a) won because TASK-075's delete-dependency UI needs the edge `id` (path is `DELETE /api/tasks/{taskId}/dependencies/{dependencyId}`); the flat list ships those ids without an extra round-trip. The frontend Gantt mapper (TASK-074) groups by `successorTaskId` to populate `gantt-task-react`'s per-task `dependencies` field — a cheap O(E) transform on the client.
+- **Reuse `DependencyResponse` DTO across modules.** The `task` module owns the dependency wire shape (TASK-072). Importing it into the `timeline` DTO keeps a single source of truth for the dependency JSON contract — if the shape ever changes, both endpoints update together. DTOs crossing controller boundaries is the kind of cross-module use the architecture allows; entities still stay inside their domain.
+- **Filter by predecessor side only.** `findByPredecessorTaskIdIn(taskIds)` returns every edge whose predecessor is in the project's task set. Filtering by *just the predecessor* is correct because TASK-072 guarantees both endpoints of every edge live in the same project. Filtering by both sides (`predecessorIn AND successorIn`) would be redundant and would also force a more complex query plan. The derived-query name is JPA-idiomatic — no `@Query` annotation needed.
+- **Empty-task short-circuit.** When the project has zero tasks, the service returns `List.of()` without calling the repository. Hibernate's behavior on `IN ()` is implementation-defined and varies across versions; the explicit short-circuit avoids that footgun and is also the cheaper path.
+- **Read-only transaction unchanged.** The existing `@Transactional(readOnly = true)` envelope covers the new repository call. No new write paths.
+- **No DB migration.** The `task_dependencies` table from V9 (TASK-066) and its indexes already exist; this task only adds a finder and wires the data through. A migration would be needed only for new schema.
+
+### What was tested
+
+- `cd backend && ./mvnw -q compile test-compile` — exit 0.
+- `cd backend && ./mvnw test` — `Tests run: 104, Failures: 0, Errors: 0, Skipped: 0` (was 103 before; the new `timelineIncludesDependencyEdges` test is the +1). All five existing `TimelineControllerTest` cases continue to pass with the constructor signature change.
+
+### Follow-up notes for TASK-074 (render dependency lines in Gantt)
+
+- The frontend `mapTimelineToGantt` mapper needs to read `timeline.dependencies` (now a flat list of `{ id, predecessorTaskId, successorTaskId, createdAt }`) and group by `successorTaskId`, then assign each successor its array of predecessor IDs as the `dependencies: string[]` field that `gantt-task-react`'s `Task` interface expects.
+- The arrow direction rendered by `gantt-task-react` matches the data: `dependencies` on a task means "this task depends on these tasks," so the arrow points from each predecessor's bar to this task's bar — same semantics as the backend's `predecessor → successor` edge.
+- The frontend's existing TimelineResponse type (in `frontend/src/modules/gantt/types/`) needs a `dependencies` field added to match the new wire shape. Without it, TypeScript would silently drop the field at the type layer even though the JSON arrives intact.
+
+### Follow-up notes for TASK-075 (minimal dependency management UI)
+
+- The flat `dependencies` list in the timeline payload includes the edge `id` for every edge in the project, so the UI can wire `DELETE /api/tasks/{taskId}/dependencies/{dependencyId}` directly from a rendered list — no separate "fetch the edge id" trip needed.
+- Mutation hooks added in TASK-075 should invalidate `['projects', projectId, 'timeline']` so both the bars and the dependency list re-render together.
+
+### Follow-up risks
+
+- **`findByPredecessorTaskIdIn` performance for large projects.** The derived query becomes `WHERE predecessor_task_id IN (?, ?, ...)` with one parameter per task. PostgreSQL handles thousands of parameters fine, but extremely large projects (> 32k tasks) could hit the protocol-level parameter limit. Not a real risk at MVP scale; if it ever surfaces, swap to `@Query("SELECT d FROM TaskDependency d WHERE d.predecessorTaskId IN (SELECT t.id FROM Task t WHERE t.projectId = :projectId)")`.
+- **`DependencyResponse` is now part of two endpoint contracts.** Any future change (e.g., adding a `lagDays` field) will affect both `POST /api/tasks/{taskId}/dependencies` and `GET /api/projects/{projectId}/timeline`. That's the deliberate consequence of reusing the DTO; the alternative (two parallel DTOs) would have created drift risk instead.
+- **Top-level list scales linearly with project edge count.** Even very dense graphs are still O(E) on the wire. No paging is needed at MVP scale — the same payload already ships every task in the project.
