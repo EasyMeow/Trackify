@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { WorkspaceSwitcher } from '../../modules/workspace/components/WorkspaceSwitcher';
+import { ToastViewport } from '../../shared/components/ToastViewport';
 
 export function AppShell({ children }: { children: ReactNode }) {
   return (
@@ -54,6 +55,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       >
         {children}
       </main>
+      <ToastViewport />
     </div>
   );
 }

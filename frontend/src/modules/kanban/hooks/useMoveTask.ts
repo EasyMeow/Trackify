@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { taskApi } from '../api/taskApi';
 import type { MoveTaskRequest } from '../api/taskApi';
 import type { TaskResponse } from '../types/task';
+import { addErrorToast } from '../../../shared/state/toastStore';
 
 export interface MoveTaskVariables extends MoveTaskRequest {
   taskId: string;
@@ -17,6 +18,9 @@ export function useMoveTask(projectId: string | undefined) {
       queryClient.invalidateQueries({
         queryKey: ['projects', projectId, 'board'],
       });
+    },
+    onError: (error) => {
+      addErrorToast(error.message || 'Failed to move task. Please try again.');
     },
   });
 }

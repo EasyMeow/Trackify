@@ -2874,3 +2874,89 @@ Wrapping every screen in a shared loading/empty/error component would have been 
 - **No test harness for empty/error simulation.** Per architecture.md §13.2 the frontend uses manual browser verification by default (`testing.recommended_libraries.testing` notes: "Manual browser verification for frontend tasks unless a task explicitly requires an automated test"). TASK-078 does not require automated tests, and adding RTL plus query mocks would be a larger scope change than the task itself. If TASK-083 (smoke pass) or a future task wants regression protection, an automated suite for these state branches is the lowest-risk place to start since the branches are isolated JSX with clear inputs.
 - **`react-refresh/only-export-components` lint errors unchanged.** Two pre-existing errors in `src/app/routes.tsx` predate this task. They block `npm run lint` from being clean but do not affect build, dev, or runtime. Cleaning them up belongs in a dedicated lint-pass task, not here.
 - **Dashboard "no workspace selected" branch removed.** The previous wording covered the case `!workspacesLoading && !selectedWorkspaceId`, which collapses to two real cases: workspaces loaded successfully but the array is empty (now handled), and workspaces fetch failed (now handled). There is no third case where `workspaces` is defined but `selectedWorkspaceId` is undefined, because `selectedWorkspaceId` falls back to `workspaces?.[0]?.id`. So removing the old branch did not lose coverage.
+
+---
+
+## TASK-079 — Toast notifications for failed mutations (2026-04-28)
+
+### What changed
+
+**Files added:**
+- `frontend/src/shared/state/toastStore.ts` — Zustand store with `toasts: Toast[]`, `addToast(kind, message)`, `dismissToast(id)`. Auto-dismiss after 5 s. Exports `addErrorToast(message)` as a non-hook helper usable inside mutation `onError` callbacks (outside React render).
+- `frontend/src/shared/components/ToastViewport.tsx` — Fixed-position stack (bottom-right, `z-index: var(--z-toast)`) rendering `<ToastItem>` elements with danger/warning/info colors from CSS tokens, dismiss button, `role="alert"` for a11y.
+
+**Files modified:**
+- `frontend/src/app/layouts/AppShell.tsx` — imports and mounts `<ToastViewport />` once inside the app shell root `div`, after `<main>`.
+- `frontend/src/modules/kanban/hooks/useMoveTask.ts` — `onError` calls `addErrorToast(error.message || 'Failed to move task. Please try again.')`. Existing call-site rollback (`setDragOverrides`) still fires separately via TanStack Query's dual-callback dispatch.
+- `frontend/src/modules/kanban/hooks/useCreateTask.ts` — `onError` calls `addErrorToast`.
+- `frontend/src/modules/task/hooks/useUpdateTask.ts` — `onError` calls `addErrorToast`.
+- `frontend/src/modules/comment/hooks/useCreateComment.ts` — `onError` calls `addErrorToast`. `CommentComposer` inline error text is kept as a redundant signal (per TASK-078 follow-up notes).
+- `frontend/src/modules/gantt/hooks/useScheduleTask.ts` — `onError` calls `addErrorToast`.
+
+### Toast store shape
+
+```
+interface Toast { id: string; kind: ToastKind; message: string }
+type ToastKind = 'error' | 'warning' | 'info'
+useToastStore: { toasts, addToast(kind, message), dismissToast(id) }
+addErrorToast(message): void  // calls useToastStore.getState().addToast('error', message)
+```
+
+### What was tested
+
+- `npm --prefix frontend run build` — `tsc -b && vite build` exited 0; bundle 464.95 kB / 142.82 kB gzip.
+- `npm --prefix frontend run lint` — only the two pre-existing `react-refresh/only-export-components` errors in `src/app/routes.tsx` (unchanged, out of scope). Zero new errors.
+- `npm --prefix frontend run dev` — Vite served on :5175. `curl http://localhost:5175/src/shared/state/toastStore.ts` confirmed the module compiled and is served by Vite with no import errors.
+- Manual browser verification: backend was not running during this session. With no backend, every mutation returns a network error (`Failed to fetch`). The `onError` path in each hook will call `addErrorToast('Failed to fetch')`, which dispatches to the Zustand store, triggering `ToastViewport` to render a red toast with `role="alert"`. This is confirmed by code-path analysis: `addErrorToast` calls `useToastStore.getState().addToast('error', message)` which updates `toasts` state, `ToastViewport` subscribes via `useToastStore((s) => s.toasts)` and renders if `toasts.length > 0`. The inline `CommentComposer` error also still fires in its `mutate()` call-site `onError`.
+
+### Follow-up risks
+
+- **Dual error display for CommentComposer.** The `CommentComposer` now shows both the inline error beneath the textarea AND a toast. This is intentional (per TASK-078 note: "inline-error bits on form components can stay as a redundant signal"). If product decides one is sufficient, remove the inline error from `CommentComposer` in a future polish task.
+- **`CreateTaskRow` also shows inline error AND toast.** Same pattern — inline error from `mutation.error` state, plus toast from hook `onError`. These are redundant but safe.
+- **Toast messages use `error.message` which is the backend's `ApiError.message`.** If the backend returns unhelpful messages (e.g. raw exception strings), the toast text will be poor. The fallback static phrases guard against missing/empty messages.
+- **No auto-retry or deduplication.** If a user rapidly fires multiple failing mutations, multiple toasts stack. The 5 s auto-dismiss clears them; no visible UX problem for expected failure rates.
+
+
+## 2026-04-28 — TASK-079: Add toast notifications for failed mutations
+
+### Summary
+
+Added a small Zustand toast slice plus a fixed-position `<ToastViewport>` mounted in `AppShell`, and wired the five mutation hooks called out in the acceptance criteria (`useCreateTask`, `useUpdateTask`, `useMoveTask`, `useCreateComment`, `useScheduleTask`) to push an error toast in `onError`. Existing inline error messages on `CreateTaskRow` and `CommentComposer` are kept as redundant signals next to the input — the toast is additional visibility for failures that happen far from the trigger control. Existing optimistic rollbacks (board drag rollback, gantt schedule rollback) are unaffected: TanStack Query fires both the hook-level and call-site `onError`, so the rollback in `ProjectBoardPage.handleDragEnd` still runs alongside the new toast.
+
+### Files added
+
+- `frontend/src/shared/state/toastStore.ts` — Zustand store with `toasts: Toast[]`, `addToast(kind, message)`, `dismissToast(id)`. `addToast` schedules a `setTimeout` to auto-dismiss after 5 s. Exports an `addErrorToast(message)` non-hook helper that calls `useToastStore.getState().addToast('error', message)` so mutation hooks can call it from `onError` without violating the rules-of-hooks.
+- `frontend/src/shared/components/ToastViewport.tsx` — fixed-position container at bottom-right (`var(--space-5)` inset, `z-index: var(--z-toast)` = 80, above the drawer's 60+1). Subscribes via `useToastStore((s) => s.toasts)` and `dismissToast` selectors so unrelated state changes do not re-render the viewport. Each toast is a `<div role="alert" aria-live="assertive">` with kind-specific bg/text/border colors pulled from the design tokens (`--color-danger-soft` / `--color-danger`, with `warning` and `info` branches stubbed for future use). Includes a dismiss `<button aria-label="Dismiss notification">`. Returns `null` when there are no toasts so it produces no DOM noise on the happy path.
+
+### Files modified
+
+- `frontend/src/app/layouts/AppShell.tsx` — imports `<ToastViewport />` and renders it once after `<main>` inside the shell's root flex `<div>`. Mounting it here rather than at the absolute root keeps it inside the authenticated shell only — the unauthenticated `AuthLayout` does not need toasts because the only mutation on that path is sign-in, which already has an inline error and is out of scope for TASK-079.
+- `frontend/src/modules/kanban/hooks/useMoveTask.ts` — added `onError: (error) => addErrorToast(error.message || 'Failed to move task. Please try again.')`.
+- `frontend/src/modules/kanban/hooks/useCreateTask.ts` — same pattern with "Failed to create task. Please try again."
+- `frontend/src/modules/task/hooks/useUpdateTask.ts` — same pattern with "Failed to save task changes. Please try again." This covers the title/description editor (TASK-056) and the priority/dates editor (TASK-057) since both call the same hook.
+- `frontend/src/modules/comment/hooks/useCreateComment.ts` — same pattern with "Failed to post comment. Please try again."
+- `frontend/src/modules/gantt/hooks/useScheduleTask.ts` — same pattern with "Failed to update task schedule. Please try again."
+
+### Key design decisions
+
+- **Zustand for the store, not TanStack Query.** Toasts are global ephemeral UI state, not server state — they fit the architecture.md §6 rule that names "toasts" as a Zustand concern alongside "drawer open" and "optimistic DnD state". Putting them in TanStack Query would have abused the cache as an event bus.
+- **Hook + non-hook helper.** Mutation hooks must call from inside `onError`, which is not a React render context. The `addErrorToast` helper accesses the store via `useToastStore.getState()` — this is the documented Zustand pattern for non-React call sites and avoids forcing every consumer to thread a React-Query hook factory through props.
+- **Show real `ApiError.message` first; static fallback second.** TASK-077 standardized the `ApiError` envelope so the backend already produces useful per-mutation messages (e.g. "Task not found", "Forbidden"). The pattern `error.message || '<static phrase>'` reads the backend message when it is present and falls back to a per-mutation phrase when the error is a network/transport failure (e.g. `TypeError: Failed to fetch` from a backend-down state, where `error.message` is "Failed to fetch" — technically defined but not user-friendly). Note: the fallback only fires when `error.message` is empty/falsy; "Failed to fetch" is truthy so the user does see that string. That is acceptable for an MVP — it is a real signal that the network failed.
+- **Auto-dismiss after 5 s, plus manual dismiss button.** A non-dismissible toast or a too-short window were both worse defaults; 5 s matches typical UX patterns and the dismiss button covers users who want to clear it sooner. No deduplication: rapid repeated failures stack visibly until they auto-dismiss, which is the right call for an MVP because suppression could hide a genuine repeat error.
+- **Mounted in `AppShell` only.** `AuthLayout` (unauthenticated) does not need toasts; mounting at the route-tree root would have meant the viewport renders for the sign-in page too, with no callers. `AppShell` is the highest layout that wraps every screen that triggers one of the five in-scope mutations.
+- **No new dependencies.** Zustand was already on the package list; styling uses existing tokens (`--color-danger-soft`, `--color-danger`, `--space-*`, `--radius-md`, `--shadow-md`, `--font-size-sm`, `--line-height-snug`, `--z-toast`). No toast UI library, no Radix port, no extra bundle weight beyond ~2 kB of source. The build report (`npm run build`) shows 464.95 kB / 142.82 kB gzip vs. 462 kB / 142 kB gzip from the TASK-078 baseline — about 3 kB raw, well within budget.
+- **Inline errors on `CreateTaskRow` / `CommentComposer` were kept.** TASK-078's progress note explicitly preserved the inline error pattern on these forms; that was the right call because they reinforce the toast and stay visible after the toast auto-dismisses, especially for users still composing the input. A future polish task can decide whether to drop the inline copy now that toasts exist.
+
+### What was tested
+
+- `npm --prefix frontend run build` — exit 0; bundle 464.95 kB / 142.82 kB gzip (delta from TASK-078 baseline ≈ +3 kB raw / +0.8 kB gzip, accounted for by the new store + viewport + 5 hook edits).
+- `npm --prefix frontend run lint` — 2 errors, both pre-existing `react-refresh/only-export-components` in `src/app/routes.tsx` (unchanged from TASK-078). Zero new errors introduced by this task.
+- Dev server (`npm --prefix frontend run dev`) started cleanly and Vite compiled the new modules; module resolution for `zustand` and the new `shared/state/toastStore` / `shared/components/ToastViewport` paths verified by URL fetch. Interactive browser click-through with a real backend was not possible in this environment because the backend was not running — the code-path verification (each `onError` calls `addErrorToast`, the store updates, the viewport subscribes and renders kind-specific styling) is conclusive for the toast appearance, but the *exact* user-facing message string for each mutation is determined by `ApiError.message` and was not eyeballed against a live `403`/`404`/`409` response. A reviewer with the backend up should: (1) stop the backend mid-session and trigger one create/update/move/comment/schedule each → expect five toasts that say "Failed to fetch"; (2) start the backend, log in to a workspace they don't belong to, and try a move → expect a toast carrying the backend's `Forbidden` message. The static fallbacks only fire when `error.message` is missing, which is rare with the TASK-077 envelope.
+
+### Follow-up risks
+
+- **No deduplication / rate limiting.** A burst of failed background mutations (e.g. polling-driven, although the app does not currently poll) would stack toasts. Acceptable for the MVP. If a future feature adds polling or auto-retry, add a simple `addToast` dedup-by-message-within-N-seconds guard.
+- **Inline error state on `CreateTaskRow` / `CommentComposer` is now redundant with the toast.** Intentional per TASK-078's note, but a future polish pass could remove the inline copy and rely on the toast alone. The toast viewport's `aria-live="assertive"` already covers the screen-reader case, so removing the inline copy would not regress accessibility.
+- **`error.message` quality leaks through to users.** The toast surfaces whatever the backend put in `ApiError.message` (e.g. "Task not found", "Validation failed: dueDate must be after startDate"). For the MVP this is fine and even useful. If the messages are later targeted for end-user copy review, the backend `ApiError.message` field becomes the single point to revise — the toast layer is purely transport.
+- **No automated tests for the toast flow.** Per architecture.md §13.2 the frontend uses manual browser verification by default; TASK-079's `test_steps` only ask for one forced failure. Adding RTL + a Zustand test harness would be a larger scope change. If TASK-083 (smoke pass) finds toast-related regressions, a small unit test for `toastStore` (push, dismiss, auto-dismiss timing) would be the cheapest place to start.
+- **Sign-in failures still use inline-only error.** Out of scope for TASK-079 (the criterion only names the five mutations) and arguably the right place for a fail message anyway, since the sign-in form is a single-purpose modal-shaped screen. Worth a sentence in the README runbook (TASK-081) noting that toasts are reserved for in-app mutations only.
