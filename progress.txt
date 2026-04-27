@@ -1693,3 +1693,32 @@ Follow-up risk / notes:
 - TASK-052 (task detail) can reuse `TaskResponse` and the `TaskCommandService` pattern for updates.
 - Priority accept-list is case-insensitive (uppercased before check) but the value stored is the uppercased form. Clients should send uppercase; lowercase is tolerated silently.
 - The two pre-existing routes.tsx lint errors are unrelated and out of scope for TASK-049. They should be addressed in a polish task (TASK-080 or similar) by extracting the `RequireAuth` / `PublicOnly` wrappers into their own files.
+
+## 2026-04-27 — TASK-051: Add create-task UI on the board
+
+Files added:
+- `frontend/src/modules/kanban/types/task.ts` — `TaskResponse` interface mirroring the backend `TaskResponse` record (id, projectId, columnId, createdBy, title, description, status, priority, sortOrder, startDate, dueDate, estimatedHours, createdAt, updatedAt). Re-exports `TaskStatus`/`TaskPriority` from `./board.ts` to avoid duplication.
+- `frontend/src/modules/kanban/api/taskApi.ts` — `taskApi.createTask(projectId, request)` calling `httpClient.post<TaskResponse>('/projects/{projectId}/tasks', body)`. `CreateTaskRequest` interface (title required, description/priority/startDate/dueDate optional). Body builder trims title and only includes optional fields when present, mirroring `projectApi.create`.
+- `frontend/src/modules/kanban/hooks/useCreateTask.ts` — TanStack Query mutation. Rejects when `projectId` is undefined. `onSuccess` invalidates `['projects', projectId, 'board']` — the exact key `useBoardQuery` uses, so the new card appears without manual cache fiddling.
+
+Files modified:
+- `frontend/src/pages/ProjectBoardPage.tsx` — added private `CreateTaskRow` component rendered between the heading and the columns. Single horizontal flex row (input + Create button + inline error). Disabled while `isPending` or while title is empty/whitespace. On success, clears the input and resets mutation state; the query invalidation triggers a refetch, so the new card shows up automatically. Styling follows the existing `DashboardPage.CreateProjectForm` pattern: tokens-only, no Tailwind/styled-components.
+
+Design decisions:
+- The control is inline above the columns (not a per-column "+ Add" button). The acceptance criterion says "small task-create control", and per-column controls are larger surface area than this task asks for; backend always inserts into the first column anyway (TASK-050 default-column rule). Per-column UI is a natural extension once the drawer/DnD lands (TASK-058+).
+- Optional fields (priority, startDate, dueDate) are wired through the API helper but not surfaced in the UI. The drawer (TASK-053–TASK-057) is the right place to edit these — adding them to the create form would duplicate that effort and exceed scope.
+- Re-exporting `TaskStatus`/`TaskPriority` from `task.ts` instead of defining them again keeps a single source of truth between board cards and full task responses.
+- No optimistic update — TASK-061 owns optimistic moves and the same machinery can extend to creates later if needed. Keeping this task to a refetch-on-success keeps complexity proportional.
+
+What was tested:
+- `npm run build` inside `frontend/` -> tsc -b + vite build, 101 modules transformed, 0 errors. Output: `dist/assets/index-C7dw3wZV.js 339.69 kB | gzip: 105.17 kB`. Exit 0.
+- `npm run lint` -> only the 2 pre-existing `react-refresh/only-export-components` errors in `src/app/routes.tsx` (tracked in the TASK-050 follow-up note). The 4 files touched here lint clean.
+- `npm run dev` boot: server came up on http://localhost:5173/, HTTP 200 served, no compile errors in the log. Vite was stopped after the smoke check.
+- Browser smoke-test ("create a task and confirm it appears immediately and after reload") was NOT executed in this environment — no live browser driver available. The wiring was code-verified: API path matches the backend contract from TASK-050 (`POST /api/projects/{id}/tasks`), query-key invalidation matches `useBoardQuery`, the same TanStack-Query create-and-invalidate pattern was browser-verified for projects in TASK-043 and works there. A live browser run should be done before the MVP smoke pass in TASK-083.
+- `code-reviewer` agent reviewed the diff — verdict: code is correct and clean, no architecture violations, no security issues, no scope creep. Only gating concerns were the missing progress.txt entry (added here) and the unrun browser test (logged here as a known gap).
+
+Follow-up risk / notes:
+- New tasks always land in the first column by `position` (the seeded "Todo"). If a project somehow exists without the default columns, the backend will return an error and the inline error text in the form will surface it — the frontend is not silently failing.
+- The form does not yet pre-validate against duplicate titles, max-length on description, or invalid date ranges. The backend enforces title length (1–255) and the input has `maxLength={255}`, so the client and server agree on the hard limit.
+- TASK-052 (`GET /api/tasks/{id}`) can reuse `TaskResponse` from `modules/kanban/types/task.ts` as-is. If the task drawer ends up living in `modules/task/`, consider moving the type there and re-exporting from kanban — but only when the drawer lands.
+- TASK-058 (DnD) will need to coexist with this create form; the form is above the column row so it should not interfere with drag handlers.
