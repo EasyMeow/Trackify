@@ -4,6 +4,7 @@ import { useTaskDetail } from '../hooks/useTaskDetail';
 import { useUpdateTask } from '../hooks/useUpdateTask';
 import type { TaskPriority, TaskResponse } from '../../kanban/types/task';
 import { CommentList } from '../../comment/components/CommentList';
+import { CommentComposer } from '../../comment/components/CommentComposer';
 
 const PRIORITY_OPTIONS: { value: TaskPriority; label: string }[] = [
   { value: 'LOW', label: 'Low' },
@@ -383,6 +384,7 @@ function DrawerContent({ data, taskId, projectId, onClose, registerCancelEdit }:
         </div>
 
         <CommentList taskId={taskId} />
+        <CommentComposer taskId={taskId} />
       </div>
 
       <div style={footerStyle}>

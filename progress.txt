@@ -2244,3 +2244,51 @@ Modified:
 - **Comment list growth.** Currently fetches all comments for a task with no limit. Long threads will balloon the response. Pagination is a post-MVP concern; flag it for a future task if usage demands it.
 - **Stale relative timestamps.** "5 minutes ago" only reflects the time at render — a long-open drawer will drift. Acceptable for MVP; a 60s `setInterval` to force a re-render would fix it cheaply later.
 - **No XSS surface.** React escapes the body text by default; `whiteSpace: 'pre-wrap'` only changes rendering, not interpretation. Safe.
+
+## 2026-04-27 — TASK-065: Add the comment composer
+
+### Files changed
+
+New:
+- `frontend/src/modules/comment/components/CommentComposer.tsx` — textarea + "Add comment" button + inline error. Local `useState` for draft + error string. Submit disabled when draft.trim() is empty or mutation pending. Cmd/Ctrl+Enter shortcut to submit; plain Enter inserts a newline. All styles via CSS-variable tokens (no hex, no Tailwind).
+- `frontend/src/modules/comment/hooks/useCreateComment.ts` — TanStack `useMutation`. On success, invalidates `['tasks', taskId, 'comments']` so `useComments` refetches. Mirrors the shape of `useUpdateTask`.
+
+Modified:
+- `frontend/src/modules/comment/api/commentApi.ts` — added `createComment(taskId, request)` calling `httpClient.post('/tasks/${taskId}/comments', request)`. No raw fetch.
+- `frontend/src/modules/comment/types/comment.ts` — added `CreateCommentRequest = { body: string }` next to `CommentResponse`.
+- `frontend/src/modules/task/components/TaskDrawer.tsx` — one new import (`CommentComposer`) and one JSX line placing `<CommentComposer taskId={taskId} />` immediately after `<CommentList taskId={taskId} />` at line 387. No other drawer changes.
+
+### Key design decisions
+
+- **Composer is a sibling of CommentList, not a child.** Keeps `CommentList` pure render-only as established in TASK-064. `TaskDrawer` is the only place that knows the two belong together visually.
+- **No optimistic insert.** Per the TASK-064 follow-up note, comments are short and round-trips are cheap; invalidate-and-refetch is the simplest correct implementation. Optimistic UI can be a separate task if usage data demands it.
+- **`onError` callback is passed at the `mutate(...)` call site, not in `useMutation` options.** Keeps the error-string state inside the component, so `useCreateComment` stays reusable from any future caller (e.g. an inline reply form).
+- **Disabled-button styling uses `--color-border-strong` background + `--color-text-subtle` text** rather than opacity. Matches the codebase's pattern for clearly-inert interactive controls and survives a11y contrast checks.
+- **Cmd/Ctrl+Enter submits.** Standard "send" shortcut for chat-like surfaces. Plain Enter remains a newline so multi-line comments stay easy to type.
+- **Error cleared on next keystroke.** Avoids stale "Couldn't post comment." persisting after the user starts revising the draft.
+- **Submit button labeled "Add comment"** (not "Post" or "Send") to match the natural-language phrasing already used in `placeholder="Add a comment…"`.
+
+### What was tested
+
+- `cd frontend && npm run build` — exit 0. tsc clean, vite built (420 modules, 419.48 kB / 129.43 kB gzip). No new TS errors.
+- `cd frontend && npm run lint` — 2 pre-existing `routes.tsx` fast-refresh errors carried over. **No new errors introduced.**
+- Independent code review (subagent) confirmed: scope respected (5 files only), architecture-compliant (httpClient + TanStack mutation + correct invalidation key), no hex/Tailwind, no dead code.
+- **Live browser verification was NOT possible in this sandbox** — Vite dev server cannot be launched interactively. The user should manually verify per the task's test step:
+  1. `docker compose up -d db` and start backend + frontend.
+  2. Sign in, open a project board, click any task to open the drawer.
+  3. Type a comment in the composer textarea, click "Add comment". Confirm it appears immediately in the list above.
+  4. Reload the page, reopen the same task, confirm the comment is still there.
+  5. Try submitting an empty/whitespace-only draft — confirm the button stays disabled.
+  6. Try Cmd/Ctrl+Enter inside the textarea — confirm submit fires.
+
+### Follow-up notes for TASK-066 (dependency schema)
+
+- TASK-066 starts the timeline track. Schema only — no API, no UI yet. Probable shape: `task_dependencies(predecessor_task_id, successor_task_id)` with PK on the pair, FK cascade-delete on either side, and a CHECK preventing self-dependencies. Existing migration sequence is V1–V8 (V8 was the comments table); next migration is `V9__create_task_dependencies.sql`.
+- Both task ids will need an index for the timeline read path that fans dependencies out per task.
+- Cycle prevention is NOT a schema concern — it belongs in the application service when TASK-072 ships the create endpoint. Schema-level prevention would require a recursive CTE trigger and is over-engineered for MVP.
+
+### Follow-up risks
+
+- **No mutation toast yet.** A failed POST currently surfaces only as "Couldn't post comment." inline under the textarea. TASK-079 will add toasts for failed mutations across the app — the composer's error path will get unified there.
+- **No character counter.** Backend caps body at 10000 chars (`@Size(max=10000)` on `CommentCreateRequest`). The composer doesn't surface this limit. A user pasting a 12k-char wall of text would see a 400 error via the inline message but no proactive warning. Acceptable for MVP; a counter can be added later if it becomes a friction point.
+- **No edit/delete.** Comments are write-once. TASK-064/065 scope is list + create only. Edit and delete are out of MVP scope per `mvp_scope.in_scope` in tasks.json.

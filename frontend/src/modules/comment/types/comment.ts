@@ -7,3 +7,7 @@ export interface CommentResponse {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface CreateCommentRequest {
+  body: string;
+}
