@@ -2292,3 +2292,40 @@ Modified:
 - **No mutation toast yet.** A failed POST currently surfaces only as "Couldn't post comment." inline under the textarea. TASK-079 will add toasts for failed mutations across the app — the composer's error path will get unified there.
 - **No character counter.** Backend caps body at 10000 chars (`@Size(max=10000)` on `CommentCreateRequest`). The composer doesn't surface this limit. A user pasting a 12k-char wall of text would see a 400 error via the inline message but no proactive warning. Acceptable for MVP; a counter can be added later if it becomes a friction point.
 - **No edit/delete.** Comments are write-once. TASK-064/065 scope is list + create only. Edit and delete are out of MVP scope per `mvp_scope.in_scope` in tasks.json.
+
+## 2026-04-27 — TASK-066: Add dependency schema and persistence
+
+### Files added
+
+- `backend/src/main/resources/db/migration/V9__task_dependencies.sql` — `task_dependencies` table with surrogate UUID PK, two FK columns (`predecessor_task_id`, `successor_task_id`) both `ON DELETE CASCADE`, `created_at TIMESTAMPTZ`, a `CHECK` rejecting self-loops, a `UNIQUE (predecessor_task_id, successor_task_id)` constraint preventing duplicate edges, and an extra index on `successor_task_id` for incoming-edge lookups.
+- `backend/src/main/java/com/trackify/task/domain/TaskDependency.java` — JPA entity with surrogate `@GeneratedValue(UUID)` id, immutable predecessor/successor UUID columns, and `@PrePersist`-stamped `createdAt`. No setters; both FK columns are immutable.
+- `backend/src/main/java/com/trackify/task/infrastructure/TaskDependencyRepository.java` — `JpaRepository<TaskDependency, UUID>` with two derived finders: `findByPredecessorTaskId` (outgoing edges) and `findBySuccessorTaskId` (incoming edges). Both backed by indexes from V9.
+
+### Key design decisions
+
+- **Surrogate UUID PK over `@EmbeddedId` composite.** `WorkspaceMember`, `ProjectMember`, and `Comment` all use a surrogate `@GeneratedValue(UUID)` id. Following that pattern keeps the codebase consistent and lets the application service address an edge by a single stable identifier (cheaper to delete by id than by composite pair).
+- **Duplicate-edge prevention via `UNIQUE` constraint, not composite PK.** The `UNIQUE (predecessor_task_id, successor_task_id)` constraint plays the same role as a composite PK would have, while leaving the surrogate `id` free to be the actual primary key. As a side effect, the auto-generated unique index also covers outgoing-edge lookups, so only the additional index on `successor_task_id` is needed.
+- **Self-loop CHECK at the DB layer.** A self-dependency would trivially satisfy any cycle-detection query and corrupt timeline math. Rejecting it in the schema closes off an entire class of bug at the boundary instead of relying on every future caller to validate.
+- **Both FKs `ON DELETE CASCADE`.** When either endpoint task is deleted, the edge has no remaining meaning. Cascading on both sides keeps the dependency graph consistent without app-layer cleanup.
+- **No `updated_at`.** An edge is either present or absent; the row itself has nothing mutable to update. To "change" a dependency, callers will delete the old edge and insert a new one.
+- **Cycle detection deferred.** Schema-level cycle prevention would require a recursive CTE trigger and is over-engineered for MVP. Cycles will be checked in the application service when TASK-072 ships the create endpoint.
+- **Entity lives in `task.domain`, not `timeline.domain`.** A dependency is a task-to-task relationship; `timeline` is a read-model module that consumes these later. Putting the entity in `task` keeps the architecture rule that `board` and `timeline` never bypass `task`'s services intact.
+
+### What was tested
+
+- `cd backend && ./mvnw compile test-compile` — BUILD SUCCESS.
+- `cd backend && ./mvnw test` — 83 tests, 0 failures, 0 errors. BUILD SUCCESS. Boot still applies all migrations cleanly via Flyway including the new V9.
+
+### Follow-up notes for TASK-067 (`GET /api/projects/{projectId}/timeline`) and TASK-072 (dependency endpoints)
+
+- The repository uses `UUID` as the ID type (surrogate, not composite), so `deleteById(UUID)` works directly on `id`. To delete an edge by the (predecessor, successor) pair, TASK-072 should add `findByPredecessorTaskIdAndSuccessorTaskId` (Spring Data can derive this) and then call `delete(entity)` — or use `deleteByPredecessorTaskIdAndSuccessorTaskId` for a single round-trip.
+- The `UNIQUE (predecessor_task_id, successor_task_id)` constraint means inserting a duplicate edge throws `DataIntegrityViolationException`. TASK-072 should map that to a 409 Conflict response in `GlobalExceptionHandler` (or catch it in the create service and translate to a domain-specific exception).
+- The CHECK constraint will throw on self-loops with a generic SQL state message. TASK-072 should reject `predecessorTaskId == successorTaskId` at the application layer first to surface a clean 400 with a useful message rather than relying on the DB error.
+- Cycle detection (TASK-072) needs a graph traversal: walk forward from `successorTaskId` via `findByPredecessorTaskId` and reject if `predecessorTaskId` is reachable. The repository has the right finders for this already.
+- For the timeline payload (TASK-067 / TASK-073), the read path will likely fan out per project: load all task ids, then `findByPredecessorTaskIdIn(taskIds)` for one query that returns all edges in the project. That finder is not yet on the repo — add it in TASK-067 or TASK-073 when the consumer concretely needs it, not preemptively.
+
+### Follow-up risks
+
+- **No cycle prevention yet.** Until TASK-072 ships, nothing guards against creating cyclic dependencies. Acceptable because the schema has no public write path: there is no API, no service, and no UI for creating edges. A cycle could only be inserted via direct SQL.
+- **No "blocks vs. blocked-by" semantics in the schema.** The model uses a single edge type (predecessor → successor); finish-to-start is implied. If a future task ever wants start-to-start or finish-to-finish dependency types, that would need a `dependency_type` column. Not a current concern for MVP.
+- **`Instant` vs `OffsetDateTime` for `createdAt`.** `Comment` uses `OffsetDateTime`; this entity uses `Instant`. Functionally equivalent (both round-trip through `TIMESTAMPTZ`), but worth normalizing later if the codebase standardizes on one. Not load-bearing for any current feature.
