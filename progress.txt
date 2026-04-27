@@ -2196,3 +2196,51 @@ New test file:
 - TASK-064 (frontend): wire GET /api/tasks/{taskId}/comments using TanStack Query; render list in task drawer; authorName may be null (deleted user) — render as "Deleted user" or similar.
 - TASK-065 (composer): POST /api/tasks/{taskId}/comments; optimistic insert optional; invalidate comments query on success; show validation error if body blank.
 - Consider pagination for long threads in a future task — current endpoint returns all comments for a task with no limit.
+
+## 2026-04-27 — TASK-064: Render the comment list in the task drawer
+
+### Files changed
+
+New:
+- `frontend/src/modules/comment/types/comment.ts` — `CommentResponse` TS interface mirroring the backend record (id, taskId, authorId nullable, authorName nullable, body, createdAt, updatedAt as ISO strings).
+- `frontend/src/modules/comment/api/commentApi.ts` — `commentApi.listComments(taskId)` calling `httpClient.get('/tasks/${taskId}/comments')`. No raw fetch.
+- `frontend/src/modules/comment/hooks/useComments.ts` — TanStack Query hook with key `['tasks', taskId, 'comments']`, `enabled: !!taskId`. Mirrors `useTaskDetail` signature.
+- `frontend/src/modules/comment/components/CommentList.tsx` — render-only component. Loading/error/empty/list branches. Each row: author name (or "Deleted user" when null) + relative time via `date-fns/formatDistanceToNow` + body with `whiteSpace: 'pre-wrap'`. All styles via CSS-variable tokens, no Tailwind.
+
+Modified:
+- `frontend/src/modules/task/components/TaskDrawer.tsx` — imports `CommentList` and renders `<CommentList taskId={taskId} />` inside the drawer body, between the dates row and the closing body div. No other drawer changes.
+
+### Key design decisions
+
+- **Comment module owns its own folder tree.** `src/modules/comment/{types,api,hooks,components}` matches the architecture's module-per-domain rule and keeps comment code out of the `task` module. The drawer (in `task`) is the only consumer for now.
+- **Independent query key from task detail.** `['tasks', taskId, 'comments']` is a sub-prefix of `['tasks', taskId]`. This means TASK-065's POST mutation can invalidate just `['tasks', taskId, 'comments']` for a focused refetch, while a future task-detail invalidation (`['tasks', taskId]`) would also cascade to the comments by TanStack's array-prefix matching. Both directions of invalidation behave sensibly.
+- **No comment composer in this PR.** TASK-065 is the composer; TASK-064 is render-only per the task boundary rules. Resisted the temptation to ship both at once.
+- **Author null handling.** Backend sets author_id to NULL when an account is deleted (V8 migration). Frontend renders "Deleted user" — preserves the body and timeline while signalling the missing identity.
+- **Relative timestamps via `formatDistanceToNow` with `addSuffix: true`.** Reads naturally ("5 minutes ago"). Wrapped in try/catch like the existing `fmtDate` helper so a malformed timestamp falls back to the raw string instead of crashing the drawer.
+- **`whiteSpace: 'pre-wrap'`** on the body so users' newlines survive rendering (code blocks, multi-line notes). No Markdown rendering — out of scope and would require a sanitizer.
+- **`useComments` accepts `taskId: string | null`** mirroring `useTaskDetail`. Even though `CommentList` only passes `string`, keeping the parity makes the hook drop-in usable from any future caller that holds a nullable selection state.
+
+### What was tested
+
+- `cd frontend && npm run build` — exit 0. tsc clean, vite built (418 modules, 417.60 kB / 129.11 kB gzip). No new TS errors.
+- `cd frontend && npm run lint` — 2 pre-existing `routes.tsx` fast-refresh errors carried over. **No new errors introduced** by any file in this task.
+- Independent code review (subagent) confirmed: architecture-compliant, scope respected (no composer), TanStack key correct, no `any`/non-null misuse, all styles via tokens.
+- **Live browser verification was NOT possible in this sandbox** — Vite dev server cannot be launched interactively. The user should manually verify per the task's test step:
+  1. `docker compose up -d db` and start backend + frontend.
+  2. Sign in, open a project board, click a task that has at least one persisted comment (seed via SQL or the upcoming TASK-065 composer).
+  3. Confirm the drawer shows the "Comments" section with author name, relative timestamp, and body text.
+  4. With a task that has no comments, confirm "No comments yet." renders.
+
+### Follow-up notes for TASK-065 (composer)
+
+- POST endpoint already exists: `POST /api/tasks/{taskId}/comments` with `{body}` JSON, returns `CommentResponse` 201. Backend validates body with `@NotBlank @Size(max=10000)`.
+- Add `commentApi.createComment(taskId, body)` and `useCreateComment(taskId)` mutation. On success, `queryClient.invalidateQueries({ queryKey: ['tasks', taskId, 'comments'] })`.
+- Place the composer (textarea + submit button) at the bottom of `<CommentList />` OR as a sibling component below it. Probably a sibling so `CommentList` stays render-only.
+- Consider an inline error message under the textarea for empty-body validation; the backend already enforces `@NotBlank` so the error path returns 400. Use the existing `inlineErrorStyle` pattern from `TaskDrawer`.
+- No optimistic insert needed for MVP — invalidate-and-refetch is fine. The thread is short and the round-trip is fast.
+
+### Follow-up risks
+
+- **Comment list growth.** Currently fetches all comments for a task with no limit. Long threads will balloon the response. Pagination is a post-MVP concern; flag it for a future task if usage demands it.
+- **Stale relative timestamps.** "5 minutes ago" only reflects the time at render — a long-open drawer will drift. Acceptable for MVP; a 60s `setInterval` to force a re-render would fix it cheaply later.
+- **No XSS surface.** React escapes the body text by default; `whiteSpace: 'pre-wrap'` only changes rendering, not interpretation. Safe.
