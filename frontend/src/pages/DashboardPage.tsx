@@ -117,7 +117,11 @@ const errorTextStyle = {
 
 export default function DashboardPage() {
   const [searchParams] = useSearchParams();
-  const { data: workspaces, isLoading: workspacesLoading } = useWorkspaces();
+  const {
+    data: workspaces,
+    isLoading: workspacesLoading,
+    isError: workspacesError,
+  } = useWorkspaces();
 
   const urlWorkspaceId = searchParams.get('workspace');
   const selectedWorkspaceId = workspaces?.some((workspace) => workspace.id === urlWorkspaceId)
@@ -134,8 +138,11 @@ export default function DashboardPage() {
     <section style={pageStyle}>
       <h1>Dashboard</h1>
       {workspacesLoading && <p style={mutedTextStyle}>Loading workspaces…</p>}
-      {!workspacesLoading && !selectedWorkspaceId && (
-        <p style={mutedTextStyle}>No workspace selected.</p>
+      {!workspacesLoading && workspacesError && (
+        <p style={errorTextStyle}>Couldn't load workspaces.</p>
+      )}
+      {!workspacesLoading && !workspacesError && workspaces && workspaces.length === 0 && (
+        <p style={mutedTextStyle}>You don't belong to any workspace yet.</p>
       )}
       {selectedWorkspaceId && (
         <CreateProjectForm workspaceId={selectedWorkspaceId} />
@@ -144,10 +151,10 @@ export default function DashboardPage() {
         <p style={mutedTextStyle}>Loading projects…</p>
       )}
       {selectedWorkspaceId && projectsError && (
-        <p style={mutedTextStyle}>Could not load projects.</p>
+        <p style={errorTextStyle}>Couldn't load projects.</p>
       )}
-      {selectedWorkspaceId && projects && projects.length === 0 && (
-        <p style={mutedTextStyle}>No projects yet.</p>
+      {selectedWorkspaceId && !projectsLoading && !projectsError && projects && projects.length === 0 && (
+        <p style={mutedTextStyle}>No projects yet — create your first project above.</p>
       )}
       {selectedWorkspaceId && projects && projects.length > 0 && (
         <ul style={{ ...gridStyle, listStyle: 'none', margin: 0, padding: 0 }}>

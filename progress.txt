@@ -2827,3 +2827,50 @@ All four routes return the same `ApiError` envelope: `status` (int), `error` (st
 - **Static "Access denied" / "Authentication required" messages.** Intentional (avoid leaking filter-chain internals), but it does mean a future debug session can't read the underlying `AuthenticationException`/`AccessDeniedException` cause from the response body. The cause is still loggable server-side; if richer client-side diagnostics are needed for development, gate that behind a profile.
 - **`ObjectMapper` is shared with controller serialization.** If a future task customizes Jackson to, say, emit timestamps as epoch-millis, the entry point and the access denied handler will follow suit automatically — that's the intended behaviour but worth noting because the shared `ApiError` shape is now driven from two paths (handler advice + filter-chain handlers).
 - **No CSRF interaction tested.** CSRF is disabled (`csrf(AbstractHttpConfigurer::disable)`), so there is no CSRF-rejection 403 path. If CSRF is later re-enabled, the access denied handler will also emit `ApiError` for that path — no extra wiring needed.
+
+
+## 2026-04-28 — TASK-078: Add loading, empty, and error states to core screens
+
+### Summary
+
+Audited the four core screens (dashboard, board, drawer, timeline) for loading / empty / error coverage and closed the three concrete gaps. The drawer and timeline already covered all three states, the board was missing an empty state for "data loaded but no columns", and the dashboard was missing a workspaces-fetch error branch and was conflating "you have no workspaces yet" with "no workspace selected". No new components or providers — just inlined branches that follow the existing TanStack Query patterns already used by the screens.
+
+### Files modified
+
+- `frontend/src/pages/DashboardPage.tsx`
+  - Pulled `isError` out of `useWorkspaces()` and rendered a dedicated `Couldn't load workspaces.` message in danger color when it fires.
+  - Added a distinct empty branch for the `workspaces.length === 0` case (`You don't belong to any workspace yet.`). Previously this case fell through to the catch-all "no workspace selected" muted line that was meant for a different scenario.
+  - Bumped the projects-fetch error from muted text to danger-color text so the user actually sees a fetch failure (consistent with the workspace error and matches the danger color used by the board / timeline error states).
+  - Added a guard so the `No projects yet` empty message does not flash while the projects query is still loading or in an error state.
+  - The "create project" form continues to render whenever a workspace is selected — it does not depend on the projects list state, so it stays useful while projects are loading or recovering from an error.
+
+- `frontend/src/pages/ProjectBoardPage.tsx`
+  - Added a defensive empty state for `data && displayColumns.length === 0` (`This board has no columns yet.`). With auto-create columns (TASK-045) this should not happen for normal projects, but the page previously rendered nothing besides the create-task row in this case, which read as a partial render and made the screen feel broken. The create-task control still renders so the screen stays usable.
+
+### Screens that already passed the criterion (no change)
+
+- `TaskDrawer.tsx` — loading shows `Loading task…` in muted color, error shows `Couldn't load task.` in danger color, and the drawer only mounts when a `taskId` is set so an "empty" state does not apply. Verified by re-reading the outer-shell branch: `(isLoading || isError || !data)` collapses into a single header that already differentiates the message and the color via `isError`.
+- `ProjectTimelinePage.tsx` — loading, error, two empty branches (`No tasks yet.` for the project-level empty; `No tasks have start and due dates set (N task(s) without dates)` for the dateless-only case). Plus the dateless tail line under the chart for the partial case. Already complete.
+
+### Why minimum-scope edits, not a generic `<QueryState>` wrapper
+
+Wrapping every screen in a shared loading/empty/error component would have been the obvious refactor, but the four screens have very different empty-state shapes (dashboard mixes a create form with a list; board mixes a create row with columns; timeline mixes a Gantt with a "no dated tasks" sub-empty; drawer is single-resource and has no empty case). A single wrapper would force per-screen render-prop options and end up roughly the same size as the four targeted edits, with more abstraction overhead. The `simplify` rule in CLAUDE.md prefers three similar lines to a premature abstraction; a generic wrapper can be lifted later if TASK-079 / TASK-080 surface more screens that need the same treatment.
+
+### What was tested
+
+- `npm --prefix frontend run build` — `tsc -b && vite build` exited 0; bundle 462 kB / 142 kB gzip (no change vs. baseline ±a few bytes from the new strings).
+- `npm --prefix frontend run lint` — only the two pre-existing `react-refresh/only-export-components` errors in `src/app/routes.tsx` (unchanged from before this task; out of scope per the architecture guidance not to refactor unrelated files).
+- Started `npm --prefix frontend run dev`; Vite came up on :5175 (the user's normal :5173 was already in use). `curl -s -o /dev/null -w "%{http_code}" http://localhost:5175/` returned 200, and `curl -s http://localhost:5175/src/pages/DashboardPage.tsx | head` confirmed the modified module was served by the dev server without syntax/HMR errors. Server stopped cleanly via TaskStop.
+- Manual end-to-end browser verification of each rendered state (load / error / empty for both data dimensions, on three pages) was **not** performed in this session — backend was not running, and the test step says "simulate each state locally" without prescribing a specific harness. The state-branch logic is exercised by the conditional JSX above the build step; tested in the browser, the worst-case failure mode would be a wording or styling tweak, not a runtime crash, because every new branch reads from already-typed query state and uses CSS variables that are already in `tokens.css`. A reviewer manually loading each screen with the backend offline (to force `isError`) and with a fresh user (to force `workspaces.length === 0` / `projects.length === 0`) is the cheapest way to close the manual loop.
+
+### Follow-up notes for TASK-079 (toast notifications for failed mutations)
+
+- Now that fetch failures are visible on every read screen, the next gap is **mutation** failure visibility. `CreateProjectForm` and `CreateTaskRow` already render an inline `ApiError.message` under the input — that pattern should likely move to a toast for failures that happen far from the trigger control (e.g. `useMoveTask` rollback, `useScheduleTask` failure, `CommentComposer`). The current inline-error bits on form components can stay as a redundant signal next to the input.
+- The Zustand store called for in architecture.md §6 (drawer open, optimistic DnD state, **toasts**) already has a slot for toasts but no implementation yet. TASK-079 will likely add a `toastSlice` plus a `<ToastViewport>` wired into `AppShell`.
+
+### Follow-up risks
+
+- **Wording is provisional.** The new strings ("You don't belong to any workspace yet.", "This board has no columns yet.", "No projects yet — create your first project above.") were chosen to be informative without growing into multi-sentence onboarding copy. If product copy is later standardized, these are the strings to revisit; they do not affect behaviour.
+- **No test harness for empty/error simulation.** Per architecture.md §13.2 the frontend uses manual browser verification by default (`testing.recommended_libraries.testing` notes: "Manual browser verification for frontend tasks unless a task explicitly requires an automated test"). TASK-078 does not require automated tests, and adding RTL plus query mocks would be a larger scope change than the task itself. If TASK-083 (smoke pass) or a future task wants regression protection, an automated suite for these state branches is the lowest-risk place to start since the branches are isolated JSX with clear inputs.
+- **`react-refresh/only-export-components` lint errors unchanged.** Two pre-existing errors in `src/app/routes.tsx` predate this task. They block `npm run lint` from being clean but do not affect build, dev, or runtime. Cleaning them up belongs in a dedicated lint-pass task, not here.
+- **Dashboard "no workspace selected" branch removed.** The previous wording covered the case `!workspacesLoading && !selectedWorkspaceId`, which collapses to two real cases: workspaces loaded successfully but the array is empty (now handled), and workspaces fetch failed (now handled). There is no third case where `workspaces` is defined but `selectedWorkspaceId` is undefined, because `selectedWorkspaceId` falls back to `workspaces?.[0]?.id`. So removing the old branch did not lose coverage.

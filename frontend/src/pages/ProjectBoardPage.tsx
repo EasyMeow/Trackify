@@ -227,6 +227,9 @@ export default function ProjectBoardPage() {
 
       {isLoading && <p style={mutedStyle}>Loading board…</p>}
       {isError && <p style={{ ...mutedStyle, color: 'var(--color-danger)' }}>Couldn't load board.</p>}
+      {!isLoading && !isError && data && displayColumns.length === 0 && (
+        <p style={mutedStyle}>This board has no columns yet.</p>
+      )}
       {displayColumns.length > 0 && (
         <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
           <div style={boardStyle}>
