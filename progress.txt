@@ -1440,3 +1440,70 @@ Deliberately deferred to TASK-045 and later:
 - Board read/write controllers and application services.
 - DTOs for column responses.
 - No controllers, services, DTOs, or default-column seeding were added in this task.
+
+## 2026-04-27 — TASK-045: Auto-create default columns for new projects
+
+Files added:
+- `backend/src/main/java/com/trackify/board/application/BoardColumnService.java`
+- `backend/src/test/java/com/trackify/board/application/BoardColumnServiceTest.java`
+- `backend/src/test/java/com/trackify/project/application/ProjectCreateServiceTest.java`
+
+Files modified:
+- `backend/src/main/java/com/trackify/project/application/ProjectCreateService.java`
+- `tasks.json` (TASK-045 status -> done)
+
+What changed:
+- New `BoardColumnService` in `com.trackify.board.application` exposes a single
+  `createDefaultColumns(UUID projectId)` method that persists three default columns
+  ("Todo", "In Progress", "Done") at positions 0, 1, 2.
+- `ProjectCreateService` now depends on `BoardColumnService` and calls
+  `createDefaultColumns(saved.getId())` immediately after persisting a new project,
+  so every new project receives the default board structure inside the same
+  transaction as project creation.
+- `BoardColumnServiceTest` (Mockito) verifies exactly three columns are saved with
+  the expected names and positions, all referencing the supplied project id.
+- `ProjectCreateServiceTest` (Mockito, new) covers three paths:
+  - Happy path: `createDefaultColumns` is invoked exactly once with the saved
+    project's id.
+  - Forbidden workspace: neither the repository nor the column service is touched.
+  - Slug conflict: column seeding is skipped after a `ConflictException`.
+
+Design choices:
+- `BoardColumnService.createDefaultColumns` is annotated
+  `@Transactional(propagation = MANDATORY)`. Seeding must run inside the caller's
+  transaction so that a project row and its three columns are committed or rolled
+  back atomically. MANDATORY (rather than REQUIRED) makes the rule explicit:
+  the method intentionally fails fast if no transaction is active, matching the
+  modular-monolith contract that `task`/`board` mutations always happen under
+  the application service that owns the originating use case.
+- `DEFAULT_COLUMN_NAMES` lives as a package-private `static final List<String>`
+  on the service (not a separate enum) because there is exactly one consumer
+  and the values are identical to what the architecture lists. Three strings is
+  below the abstraction-pull threshold per CLAUDE.md.
+- The wire-up sits inside the existing `@Transactional` boundary on
+  `ProjectCreateService.create`. No additional `@Transactional` annotation is
+  needed at the call site.
+- No board read endpoint, DTOs, or controllers were added — those belong to
+  TASK-047 and TASK-049. The MVP rule "stay inside the task boundary" applies.
+
+What was tested:
+- `./mvnw -f backend compile test-compile` -> BUILD SUCCESS, 87 sources up to date.
+- `./mvnw test` (run from `backend/`) -> BUILD SUCCESS, 42 tests pass (was 37 before
+  TASK-045: +2 from `BoardColumnServiceTest`, +3 from `ProjectCreateServiceTest`).
+- Did NOT spin up Postgres + Spring Boot integration test for the MANDATORY
+  propagation guarantee — covered indirectly by the Mockito unit tests and by
+  the project/workspace integration tests that already exercise the
+  ProjectCreateService transaction boundary.
+
+Follow-up risk / notes:
+- BoardColumnService currently has a single method. As TASK-047/049 land,
+  read methods will be added; if mutation methods accumulate, consider splitting
+  into BoardColumnQueryService / BoardColumnCommandService following the same
+  pattern used for project/workspace.
+- The MANDATORY propagation will throw at runtime if any future caller invokes
+  `createDefaultColumns` outside a transaction — that is intentional and the
+  test for that failure mode would belong to whichever future caller adds the
+  bug, not to this task.
+- TASK-046 (next pending) is "Add task schema and persistence" — schema/entity/
+  repository for tasks. That task is independent of board columns and has no
+  cross-cutting refactor needed here.

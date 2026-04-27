@@ -1,5 +1,6 @@
 package com.trackify.project.application;
 
+import com.trackify.board.application.BoardColumnService;
 import com.trackify.common.exception.ConflictException;
 import com.trackify.common.exception.ForbiddenException;
 import com.trackify.project.domain.Project;
@@ -33,11 +34,14 @@ public class ProjectCreateService {
 
     private final ProjectRepository projectRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
+    private final BoardColumnService boardColumnService;
 
     public ProjectCreateService(ProjectRepository projectRepository,
-                                WorkspaceMemberRepository workspaceMemberRepository) {
+                                WorkspaceMemberRepository workspaceMemberRepository,
+                                BoardColumnService boardColumnService) {
         this.projectRepository = projectRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
+        this.boardColumnService = boardColumnService;
     }
 
     /**
@@ -64,6 +68,7 @@ public class ProjectCreateService {
 
         Project project = new Project(workspaceId, userId, request.name(), slug, request.description());
         Project saved = projectRepository.save(project);
+        boardColumnService.createDefaultColumns(saved.getId());
         return toResponse(saved);
     }
 
