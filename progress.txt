@@ -2960,3 +2960,33 @@ Added a small Zustand toast slice plus a fixed-position `<ToastViewport>` mounte
 - **`error.message` quality leaks through to users.** The toast surfaces whatever the backend put in `ApiError.message` (e.g. "Task not found", "Validation failed: dueDate must be after startDate"). For the MVP this is fine and even useful. If the messages are later targeted for end-user copy review, the backend `ApiError.message` field becomes the single point to revise — the toast layer is purely transport.
 - **No automated tests for the toast flow.** Per architecture.md §13.2 the frontend uses manual browser verification by default; TASK-079's `test_steps` only ask for one forced failure. Adding RTL + a Zustand test harness would be a larger scope change. If TASK-083 (smoke pass) finds toast-related regressions, a small unit test for `toastStore` (push, dismiss, auto-dismiss timing) would be the cheapest place to start.
 - **Sign-in failures still use inline-only error.** Out of scope for TASK-079 (the criterion only names the five mutations) and arguably the right place for a fail message anyway, since the sign-in form is a single-purpose modal-shaped screen. Worth a sentence in the README runbook (TASK-081) noting that toasts are reserved for in-app mutations only.
+
+
+## 2026-04-28 — TASK-080: Add a read-only project settings page
+
+### Files added
+
+- `frontend/src/modules/project/hooks/useProject.ts` — TanStack Query hook wrapping `projectApi.getById`, queryKey `['projects', projectId]`, disabled when `projectId` is undefined.
+
+### Files modified
+
+- `frontend/src/modules/project/api/projectApi.ts` — added `getById(projectId)` method calling `httpClient.get<Project>('/projects/' + projectId)`.
+- `frontend/src/pages/ProjectSettingsPage.tsx` — replaced the one-liner placeholder with a real two-section read-only view: "Project details" (name as `<h1>`, slug in monospace/muted, description or italic "No description" fallback, created and updated dates via `date-fns` `format('PPP')`) and "Board columns" (reuses `useBoardQuery`, sorts by `position`, renders a `<table>` with position index and name; empty-state if no columns). All loading/error/empty branches are explicit, matching the TASK-078/079 pattern. No edit affordances, no mutation calls. All styles use existing `--space-*`, `--color-*`, `--font-*`, `--radius-*`, `--shadow-*` tokens from `tokens.css`.
+
+### Key design decisions
+
+- **Reused `useBoardQuery` for columns.** The board endpoint already returns columns with `id`, `name`, `position`. Columns are sorted client-side by `position` so display order matches the actual board regardless of the API return order.
+- **No new board/column endpoint needed.** `GET /api/projects/{id}/board` already returns the column list; the page just ignores the `tasks` array inside each column entry. No backend changes required.
+- **Column position displayed as `position + 1`** (1-based) in the table, since backend positions are 0-indexed — the human-readable display is 1, 2, 3 rather than 0, 1, 2.
+- **`useProject` queryKey is `['projects', projectId]`.** This is the canonical key for a single project; it does not conflict with the workspace-scoped list key `['workspaces', workspaceId, 'projects']` used by `useProjects`.
+
+### What was tested
+
+- `npm --prefix frontend run build` — exited 0; bundle 468.49 kB / 143.38 kB gzip (delta from TASK-079 baseline ≈ +3.5 kB raw, accounted for by new hook + api method + page rewrite).
+- `npm --prefix frontend run lint` — 2 errors, both pre-existing `react-refresh/only-export-components` in `src/app/routes.tsx`. Zero new errors.
+- Interactive browser verification with a live backend was not possible in this session. The loading→error path is confirmed by code-path analysis: when the backend is down, `useProject` and `useBoardQuery` will set `isError: true` and the page renders the `errorTextStyle` messages ("Couldn't load project details." / "Couldn't load board columns."). A reviewer with the backend running should navigate to `/projects/<real-id>/settings` and confirm: name, slug, description (or "No description"), formatted created/updated dates, and the sorted column list (Todo at position 1, In Progress at 2, Done at 3 for default-seeded projects).
+
+### Follow-up risks
+
+- **`useProject` and `useBoardQuery` fire independent requests.** The page makes two parallel fetches; there is no dependent loading relationship. Both show their own loading/error states independently, which is acceptable for an MVP but could look slightly jarring if one resolves much later than the other.
+- **Column order relies on `position` being contiguous and 0-indexed.** If a future migration changes the seeding, the displayed index (`position + 1`) may skip numbers. A pure positional rank (array index after sort) would be more robust — easy to change in a future polish task.

@@ -12,6 +12,10 @@ export const projectApi = {
     return httpClient.get<Project[]>(`/workspaces/${workspaceId}/projects`);
   },
 
+  getById(projectId: string): Promise<Project> {
+    return httpClient.get<Project>(`/projects/${projectId}`);
+  },
+
   create(workspaceId: string, request: ProjectCreateRequest): Promise<Project> {
     const body: ProjectCreateRequest = { name: request.name };
     if (request.slug && request.slug.trim()) body.slug = request.slug.trim();
