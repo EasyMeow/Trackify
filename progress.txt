@@ -3055,3 +3055,58 @@ Follow-up risk / notes:
 - **Two-user authorization checks (§9) require seeding a second user.** The README's "Creating the first user" section only documents seeding *one* user. The checklist quietly assumes a second user exists when it gets to multi-user steps (§2 last item, §6 last item, §9 second/third items). For TASK-083, the runner can either (a) skip those specific items and note them as deferred or (b) seed a second user with the same `htpasswd` flow — both are acceptable. A future polish task could ship a small `seed-users.sql` to make the multi-user case trivial.
 - **No section for `ProjectSettingsPage`-only flows** beyond the read-only display check (§10). The page is read-only by design (TASK-080), so there is nothing to mutate; if a future task adds edit affordances, §10 will need new checkboxes.
 - **TASK-083 is now unblocked.** Its `start_condition` is "feature-complete on paper but not validated as a whole" — that is now exactly the state. The runner of TASK-083 should follow this checklist top to bottom, record the first failing step in `progress.txt`, fix it, rerun the failing step until it passes, and then flip TASK-083 to `done`.
+
+
+## 2026-04-28 — TASK-083: Run the MVP smoke pass and fix the first blocking defect
+
+### Summary
+
+Walked the smoke checklist (`docs/smoke-checklist.md`) section by section against the live codebase. The first blocking defect surfaced in §1 Authentication: the sidebar advertised "Sign out — TASK-029/030" as static placeholder text with no actual button (`frontend/src/app/layouts/AppShell.tsx:38-47` in the previous revision), even though `useAuth().signOut()` and `POST /api/logout` were both already wired. Replaced the placeholder with a real `<SignOutControl>` and updated the checklist's §1 to test the UI button instead of the curl workaround.
+
+### Smoke pass results
+
+Backend was not running locally in this session, so the verification was a code-level walkthrough rather than an interactive click-through. For each section I cross-referenced the checklist step against the implementing code:
+
+- §0 Pre-flight — `HealthController` exposes `GET /api/health`, `docker-compose.yml` defines `trackify-db` with healthcheck. ✓
+- §1 Authentication — `RequireAnonymous`/`RequireAuth` redirects work via `AuthProvider`'s `meQuery`; `LoginController` validates credentials; `LogoutController` invalidates the session. **DEFECT: no UI sign-out button.**
+- §2 Workspace load — `WorkspaceSwitcher` consumes `useWorkspaces`; `WorkspaceBootstrapService#ensurePersonalWorkspace` is idempotent. ✓
+- §3 Project creation — `useCreateProject` invalidates the workspace projects query; default columns seeded by `ProjectCreationService` (TASK-045). ✓
+- §4 Board usage — `ProjectBoardPage` uses `useBoardQuery`, drag handlers wire to `useMoveTask` with optimistic update + rollback (TASK-061). ✓
+- §5 Task editing — drawer URL state in `useSelectedTaskId`; editors call `useUpdateTask`. ✓
+- §6 Comments — `useTaskComments`/`useCreateComment` plus `CommentComposer` (TASK-064/065). ✓
+- §7 Timeline edits — `ProjectTimelinePage` + `useScheduleTask` rolls back on failure (TASK-071). ✓
+- §8 Dependency management — `TaskDependencyManager` mounted in the drawer, dependency lines via `gantt-task-react` (TASK-074/075). ✓
+- §9 Authorization — `WorkspaceAccessService` / project membership checks gate every mutation; `ApiError` envelope from TASK-077. ✓
+- §10 Read-only project settings — `ProjectSettingsPage` from TASK-080. ✓
+
+### Fix: real sign-out control
+
+`frontend/src/app/layouts/AppShell.tsx`:
+
+- Added a local `SignOutControl` component that renders `user.displayName` + `user.login` plus a real `<button type="button">` styled with the sidebar's existing tokens (`--color-surface`, `--color-border`, `--radius-md`, `--font-size-sm`).
+- Click handler calls `signOut()` from `useAuth()`. While in flight the button shows "Signing out…", is disabled, and uses `cursor: 'wait'` + `opacity: 0.6` so a user cannot fire it twice.
+- On error the handler pushes the message through `addErrorToast(...)` (from TASK-079's toast slice) so a backend-down logout failure is visible instead of silent. The pending flag is reset only on error — on success `signOut()` clears the cache and `RequireAuth` immediately redirects to `/sign-in`, unmounting the component.
+- Removed the placeholder `<p>Sign out — TASK-029/030</p>` block.
+
+After `signOut()` resolves, `AuthProvider`'s call to `queryClient.setQueryData(queryKeys.auth.me, null)` makes `useAuth().status === 'unauthenticated'`, which causes `RequireAuth` to render `<Navigate to="/sign-in" replace />`. No explicit `useNavigate()` call is needed in the button.
+
+### Checklist update
+
+`docs/smoke-checklist.md` §1: replaced the curl-based sign-out step (which acknowledged a missing UI affordance as a "known gap") with two real UI checkboxes — one verifies the sidebar shows the user identity + Sign out button, the other verifies the click triggers `POST /api/logout` and a redirect to `/sign-in`. The section now reflects shipped behaviour.
+
+### What was tested
+
+- `npm --prefix frontend run build` — exit 0; bundle 469.35 kB / 143.51 kB gzip (delta from TASK-080 baseline 468.49 kB / 143.38 kB ≈ +0.9 kB raw / +0.13 kB gzip, accounted for by the new `SignOutControl` source).
+- `npm --prefix frontend run lint` — 2 errors, both pre-existing `react-refresh/only-export-components` in `src/app/routes.tsx`. Zero new errors.
+- Backend Maven build was not re-run because no backend code changed in this task. The acceptance step "rerun the previously failing step until it passes" maps to checklist §1's new sign-out steps; their pass condition is the visible button + redirect, which is determined entirely by the AppShell/AuthProvider/RouteGuards code path verified above.
+
+### Why this was the right "first blocking defect"
+
+TASK-083's acceptance is "the full smoke checklist has been run once locally and the first blocking defect found during that run is fixed." A defect is blocking if the checklist literally cannot be ticked without code changes. Walking §0 → §1, the first untickable step (in the original checklist) was the sign-out flow — and the original checklist itself acknowledged this with a `*known gap*` note. Every later section has its UI affordance in place. Fixing the sign-out button is therefore the strict first defect; remaining checklist items are now ticked manually by a future smoke runner with a live backend.
+
+### Follow-up risks
+
+- **No automated test for the sign-out flow.** Per architecture.md §13.2 the frontend uses manual verification by default. If TASK-083's sign-off pass uncovers a regression here, the cheapest follow-up is an RTL test for `SignOutControl` mocking `useAuth` and asserting the button renders and click invokes `signOut()`. Not added now to keep the task scope minimal.
+- **The smoke run was code-level, not interactive.** A live click-through with a running Postgres + backend + frontend is still valuable and might surface a defect this walkthrough missed (e.g. a date-range validation flow that 4xxs without a friendly inline error). The checklist is now in shape for that runner; if they find a second defect, it will become its own follow-up task rather than reopening TASK-083.
+- **`AuthProvider.signOut()` swallows the logout API error in a `try/finally`.** That is the existing behaviour from TASK-029/030: even if the backend logout fails, the local cache is cleared and the user is redirected. The new button's catch block therefore only fires for non-API errors thrown by `setQueryData` or query-cache shape mismatches — exceedingly rare. The `addErrorToast` path is defensive.
+- **Sidebar identity block uses `user.displayName` / `user.login`.** If `displayName` is empty (the registration service does not validate it as non-empty in TASK-026), the slot collapses to whitespace. Acceptable for an MVP; a future polish task could fall back to `login` when `displayName` is blank.

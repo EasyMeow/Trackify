@@ -34,9 +34,10 @@ step in `progress.txt` along with the observed behaviour — that is the input f
 - [ ] A `SESSION` cookie is present in devtools (Application → Cookies → `localhost:5173`),
       `HttpOnly` true.
 - [ ] Hard reload of `/` keeps you signed in (no redirect to `/sign-in`).
-- [ ] Sign-out via `curl -i -X POST http://localhost:8080/api/logout
-      -H "Cookie: SESSION=<value>"` returns 204; reloading the SPA then redirects to
-      `/sign-in`. *(There is no UI sign-out button in the MVP — known gap, see CLAUDE.md.)*
+- [ ] The sidebar shows the signed-in user's `displayName` and `login`, plus a
+      visible "Sign out" button.
+- [ ] Clicking "Sign out" calls `POST /api/logout` (200) and the SPA redirects to
+      `/sign-in`. Reloading any protected route stays on `/sign-in`.
 
 ## 2. Workspace load
 
