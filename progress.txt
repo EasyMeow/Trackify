@@ -2769,3 +2769,61 @@ Every row now has a controller-level test that proves a non-member receives 403.
 - **Test-only verification of authorization.** The new tests prove the *controller* surfaces 403 when the service throws `ForbiddenException`. They mock the service, so they do not re-prove that `ProjectQueryService.getById` actually queries `WorkspaceMemberRepository.existsByWorkspaceIdAndUserId`. That is covered by the service-layer tests; together the two layers prove the end-to-end behaviour. Anyone refactoring authorization out of the service layer would need to update both test sets and any reviewer should make sure that the service-layer membership check tests are not silently weakened in the same change.
 - **Dependency endpoints share one auth check.** `TaskDependencyService` calls `ProjectQueryService.getById(successor.projectId, userId)` and trusts that the predecessor lives in the same project (enforced by the same-project guard). If a future task ever loosens the same-project guard to allow cross-project dependencies, the predecessor side would need its own membership check before the edge is created. There is a comment about this trade-off in the TASK-072 progress note (search "predecessor authorization must be rechecked separately").
 - **No 401-body assertion.** The unauthenticated tests still only check `status().isUnauthorized()`, not the response body. Once TASK-077 standardizes 401, those tests should be extended to assert the envelope shape. Out of scope for TASK-076.
+
+
+## 2026-04-28 — TASK-077: Standardize 401, 403, and 404 API responses
+
+### Summary
+
+Closed the 401 body-shape gap flagged in the TASK-076 follow-up note: Spring Security's `HttpStatusEntryPoint(UNAUTHORIZED)` returned a 401 with an empty body, so unauthenticated requests had no `ApiError` envelope. Added a `JsonAuthenticationEntryPoint` for 401 and a `JsonAccessDeniedHandler` for the security-layer 403 (e.g. authenticated callers hitting `denyAll`) so every error now emits the same `{ status, error, message, path, timestamp }` envelope as `GlobalExceptionHandler`. 404 (`NotFoundException` → handler) and the controller-level 403 (`ForbiddenException` → handler) were already conformant; the test suite was extended to assert each status code's body shape end-to-end.
+
+### Files added
+
+- `backend/src/main/java/com/trackify/common/security/JsonAuthenticationEntryPoint.java` — implements `AuthenticationEntryPoint`. Writes an `ApiError(401, "UNAUTHORIZED", "Authentication required", request.getRequestURI())` to the response with `Content-Type: application/json; charset=UTF-8`. Plain class (no `@Component`) so it can be wired explicitly in `SecurityConfig` and pulled into existing `@WebMvcTest` slices via the same `@Import(SecurityConfig.class)` they already use.
+- `backend/src/main/java/com/trackify/common/security/JsonAccessDeniedHandler.java` — implements `AccessDeniedHandler`. Mirrors the entry point with `ApiError(403, "FORBIDDEN", "Access denied", ...)`. Hit when an authenticated session reaches a `denyAll` rule (e.g. unmapped non-`/api` paths under the current rule set).
+
+### Files modified
+
+- `backend/src/main/java/com/trackify/config/SecurityConfig.java`
+  - Replaced `new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)` with the new `JsonAuthenticationEntryPoint` injected as a parameter.
+  - Added `accessDeniedHandler(...)` to the `exceptionHandling` chain pointing at the new `JsonAccessDeniedHandler`.
+  - Declared both as `@Bean` methods on `SecurityConfig` so any test that already does `@Import(SecurityConfig.class)` gets the new beans for free — no controller-test boilerplate change.
+  - Removed the now-unused `HttpStatusEntryPoint` import; added an `ObjectMapper` parameter to the bean factories so the entry point/handler reuse the auto-configured Jackson mapper.
+- `backend/src/test/java/com/trackify/config/SecurityFilterChainTest.java`
+  - Strengthened `protectedRouteReturnsUnauthorizedWhenAnonymous` to assert the JSON body shape on top of the 401 status (was only `status().isUnauthorized()`).
+  - Added `deniedRouteReturnsForbiddenEnvelopeWhenAuthenticated` (`@WithMockUser`) hitting `GET /something-else` (denyAll path) and asserting the 403 envelope.
+  - Updated `@Import` to also pull in `JacksonConfig` for `ObjectMapper` parity with `MeControllerTest`.
+- `tasks.json` — TASK-077 status: pending → done.
+
+### Endpoint-level error coverage matrix
+
+| Status | Source | Producer | Test |
+|---|---|---|---|
+| 401 | unauthenticated request to `/api/**` | `JsonAuthenticationEntryPoint` | `SecurityFilterChainTest.protectedRouteReturnsUnauthorizedWhenAnonymous` |
+| 403 (security) | authenticated request to `denyAll` path | `JsonAccessDeniedHandler` | `SecurityFilterChainTest.deniedRouteReturnsForbiddenEnvelopeWhenAuthenticated` |
+| 403 (membership) | service throws `ForbiddenException` | `GlobalExceptionHandler.handleForbidden` | many: e.g. `TaskUpdateControllerTest.nonMemberReceivesForbidden403`, `BoardControllerTest.nonMemberReceivesForbidden`, `CommentControllerTest.listCommentsForbiddenWhenCallerLacksAccess` |
+| 404 | service throws `NotFoundException` | `GlobalExceptionHandler.handleNotFound` | `GlobalExceptionHandlerTest.notFoundExceptionReturnsApiErrorEnvelope` plus per-resource tests (e.g. `TaskDetailControllerTest`) |
+
+All four routes return the same `ApiError` envelope: `status` (int), `error` (string code), `message`, `path`, `timestamp` (ISO-8601). `details` is present only on validation failures (400). The shape is unchanged from TASK-011.
+
+### Key design decisions
+
+- **Same envelope for security-layer 401/403 as for handler-layer 403/404.** TASK-077's acceptance criterion is "consistent JSON error shape for unauthorized, forbidden, and missing resources." The handler-layer responses (`ForbiddenException`, `NotFoundException`) already produced `ApiError`; the only divergence was 401 (empty body from `HttpStatusEntryPoint`) and the rarely-hit Spring `AccessDeniedHandler` default. Both now write `ApiError` directly via `ObjectMapper.writeValue(response.getOutputStream(), body)` rather than going through `@RestControllerAdvice` (which sees only exceptions thrown inside the dispatcher servlet — security exceptions thrown by the filter chain bypass `@ControllerAdvice` entirely). Adding `ResolvableExceptions` or trying to forward to `/error` would have introduced more moving parts than just serializing the record.
+- **Beans declared inside `SecurityConfig`, not `@Component`.** The `@WebMvcTest` slice does not run component scan; controllers that already `@Import(SecurityConfig.class)` would have failed to load if the new beans were `@Component`-only. Declaring them as `@Bean` methods next to `securityFilterChain` keeps each test slice self-contained without touching the 16 existing controller tests.
+- **`ObjectMapper` injected, not constructed.** Reusing the Spring-managed `ObjectMapper` keeps date/format settings consistent with the rest of the API. `Instant timestamp` serializes via Jackson's `JavaTimeModule` (already on the classpath via `spring-boot-starter-web`).
+- **Static error messages, not exception details.** `JsonAuthenticationEntryPoint` writes "Authentication required" rather than `authException.getMessage()`; the access denied handler writes "Access denied". Spring's authentication/access-denied exception messages can leak filter-chain internals (e.g. "Full authentication is required to access this resource") and are not user-facing; the static phrasing matches the rest of the API's error vocabulary and avoids accidental disclosure.
+- **No change to `ApiError` itself.** The record already had a `path` field and `timestamp` (TASK-011) — nothing on the wire shape needed to change. The only thing TASK-077 changed is *who emits it* for 401/security-403.
+- **Did not revisit the controller-layer 403/404 paths.** Re-reading `GlobalExceptionHandler` confirmed every controller-thrown 403 (`ForbiddenException`) and 404 (`NotFoundException`) already produces `ApiError`. Modifying them would have been scope creep — the gap was *only* the security-filter responses.
+- **404 from "no handler found" is not in scope here.** Under the current `SecurityConfig`, every unmapped path either matches `/api/**` (authenticated callers reach a 404 from `DispatcherServlet` if not mapped) or `anyRequest().denyAll()` (unauthenticated → 401, authenticated → 403). The `denyAll` 403 is now JSON-conformant; the `/api/**` no-handler case still relies on Spring's default 404 page. Spring Boot 3 returns `application/json` for that case when the request `Accept: application/json` is sent (which the SPA does), but the body is `BasicErrorController`'s shape, not `ApiError`. The acceptance criterion is "missing resources" — that's the controller-thrown `NotFoundException` path, which is conformant. The "404 because the URL is wrong" case is a routing issue, not a missing-resource one, and is out of scope for this task. If we want full conformance later, set `spring.mvc.throw-exception-if-no-handler-found=true` and `spring.web.resources.add-mappings=false`, then add a `NoHandlerFoundException` handler to `GlobalExceptionHandler`. Noting it as a follow-up below.
+
+### What was tested
+
+- `cd backend && ./mvnw -q compile test-compile` — exit 0.
+- `cd backend && ./mvnw test` — `Tests run: 108, Failures: 0, Errors: 0, Skipped: 0` (was 107; +1 for `deniedRouteReturnsForbiddenEnvelopeWhenAuthenticated`). The strengthened 401 test (now asserts body shape) still passes. None of the 16 pre-existing controller tests that `@Import(SecurityConfig.class)` regressed — bean wiring is transparent to them.
+
+### Follow-up risks
+
+- **404 from unmapped routes still falls through to Spring's `BasicErrorController`.** As noted above, an authenticated request to `/api/does-not-exist` returns Spring Boot's default error JSON, not `ApiError`. For an SPA that only ever calls known endpoints this is invisible, but if a future task wants strict envelope conformance for *every* response, enable `throw-exception-if-no-handler-found`, disable static-resource mappings, and add a `@ExceptionHandler(NoHandlerFoundException.class)` in `GlobalExceptionHandler`.
+- **Static "Access denied" / "Authentication required" messages.** Intentional (avoid leaking filter-chain internals), but it does mean a future debug session can't read the underlying `AuthenticationException`/`AccessDeniedException` cause from the response body. The cause is still loggable server-side; if richer client-side diagnostics are needed for development, gate that behind a profile.
+- **`ObjectMapper` is shared with controller serialization.** If a future task customizes Jackson to, say, emit timestamps as epoch-millis, the entry point and the access denied handler will follow suit automatically — that's the intended behaviour but worth noting because the shared `ApiError` shape is now driven from two paths (handler advice + filter-chain handlers).
+- **No CSRF interaction tested.** CSRF is disabled (`csrf(AbstractHttpConfigurer::disable)`), so there is no CSRF-rejection 403 path. If CSRF is later re-enabled, the access denied handler will also emit `ApiError` for that path — no extra wiring needed.

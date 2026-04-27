@@ -1,15 +1,17 @@
 package com.trackify.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.trackify.common.security.JsonAccessDeniedHandler;
+import com.trackify.common.security.JsonAuthenticationEntryPoint;
+
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -24,6 +26,10 @@ import org.springframework.web.cors.CorsConfigurationSource;
  * {@link SecurityContextRepository} so the login controller can authenticate
  * credentials and persist the resulting {@code SecurityContext} into the session
  * (which Spring Session JDBC then writes to the {@code SPRING_SESSION} table).
+ *
+ * <p>TASK-077: wires {@link JsonAuthenticationEntryPoint} and
+ * {@link JsonAccessDeniedHandler} so 401 and 403 responses share the
+ * {@code ApiError} envelope returned by {@code GlobalExceptionHandler}.
  */
 @Configuration
 public class SecurityConfig {
@@ -32,7 +38,9 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             CorsConfigurationSource corsConfigurationSource,
-            SecurityContextRepository securityContextRepository
+            SecurityContextRepository securityContextRepository,
+            JsonAuthenticationEntryPoint authenticationEntryPoint,
+            JsonAccessDeniedHandler accessDeniedHandler
     ) throws Exception {
         return http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource))
@@ -46,7 +54,8 @@ public class SecurityConfig {
                         .anyRequest().denyAll()
                 )
                 .exceptionHandling(eh -> eh
-                        .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
+                        .authenticationEntryPoint(authenticationEntryPoint)
+                        .accessDeniedHandler(accessDeniedHandler))
                 .formLogin(AbstractHttpConfigurer::disable)
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .logout(AbstractHttpConfigurer::disable)
@@ -61,5 +70,15 @@ public class SecurityConfig {
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration configuration) throws Exception {
         return configuration.getAuthenticationManager();
+    }
+
+    @Bean
+    public JsonAuthenticationEntryPoint jsonAuthenticationEntryPoint(ObjectMapper objectMapper) {
+        return new JsonAuthenticationEntryPoint(objectMapper);
+    }
+
+    @Bean
+    public JsonAccessDeniedHandler jsonAccessDeniedHandler(ObjectMapper objectMapper) {
+        return new JsonAccessDeniedHandler(objectMapper);
     }
 }
