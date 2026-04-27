@@ -1507,3 +1507,79 @@ Follow-up risk / notes:
 - TASK-046 (next pending) is "Add task schema and persistence" — schema/entity/
   repository for tasks. That task is independent of board columns and has no
   cross-cutting refactor needed here.
+
+## 2026-04-27 — TASK-046: Add task schema and persistence
+
+Files added:
+- `backend/src/main/resources/db/migration/V7__tasks.sql`
+- `backend/src/main/java/com/trackify/task/domain/Task.java`
+- `backend/src/main/java/com/trackify/task/infrastructure/TaskRepository.java`
+
+Schema choices (V7__tasks.sql):
+- All 14 fields from architecture.md §10 are present: id, project_id, column_id,
+  created_by, title, description, status, priority, sort_order, start_date,
+  due_date, estimated_hours, created_at, updated_at.
+- `status` and `priority` stored as TEXT + CHECK constraint (matches V5's
+  `role TEXT ... CHECK (role IN (...))` style). Status values: TODO, IN_PROGRESS,
+  IN_REVIEW, DONE, CANCELLED. Priority values: LOW, MEDIUM, HIGH, URGENT.
+- `sort_order DOUBLE PRECISION` — allows fractional inserts between two existing
+  values (`(a+b)/2`) without re-numbering the whole column.
+- `start_date` / `due_date`: nullable DATE (calendar dates, not timestamps).
+- `estimated_hours`: nullable NUMERIC(6,2). Bounded decimal so partial hours
+  don't get truncated.
+- `project_id` ON DELETE CASCADE — removing a project removes its tasks
+  (matches V6 board_columns convention).
+- `column_id` ON DELETE RESTRICT — deleting a column with tasks must be an
+  explicit business operation; silent cascades would lose data.
+- `created_by` nullable + ON DELETE SET NULL — task survives account deletion
+  with attribution cleared, keeping history intact.
+- Indexes: `tasks_project_column_sort_idx (project_id, column_id, sort_order)`
+  for the primary board query, `tasks_column_id_idx` for column-level lookups
+  (e.g., RESTRICT enforcement), `tasks_created_by_idx` for user attribution.
+
+Entity decisions (Task.java):
+- Mirrors BoardColumn.java / Project.java style: private fields, protected
+  no-arg constructor for JPA, public creation constructor, `@PrePersist` /
+  `@PreUpdate` for timestamps, getters for all fields, setters only for
+  mutable fields (everything except id, projectId, createdBy, createdAt).
+- FK columns (`projectId`, `columnId`, `createdBy`) stored as opaque UUIDs
+  with no `@ManyToOne` per architecture.md §7 modular monolith — avoids
+  cross-module JPA coupling.
+- `status` and `priority` stored as `String`, not enum — keeps the schema and
+  Java in sync via a single source of truth (the CHECK constraint). Future
+  validation can wrap these in a value object if needed.
+
+Repository (TaskRepository.java):
+- Extends `JpaRepository<Task, UUID>`.
+- Single finder added: `findByProjectIdOrderByColumnIdAscSortOrderAsc(UUID projectId)`
+  — the minimum needed for TASK-047 (board read endpoint). Matches the composite
+  index `tasks_project_column_sort_idx` in V7. Additional finders (timeline
+  query, task detail lookup, etc.) will be added by the tasks that need them.
+
+What was tested:
+- `./mvnw -f backend compile test-compile` -> BUILD SUCCESS, 90 sources compiled.
+- `./mvnw -f backend test` -> BUILD SUCCESS, 42 tests pass (baseline unchanged
+  — this task added schema/entity/repository only, no test fixtures).
+- Did NOT spin up Spring Boot to verify Flyway live application (Postgres is
+  running but `mvnw spring-boot:run` was not authorized in this session).
+  The migration SQL is straightforward valid Postgres — the live verification
+  will happen the next time any developer runs the app, which TASK-047
+  controller tests will exercise via @DataJpaTest / @SpringBootTest if needed.
+
+Deliberately deferred to TASK-047 and later (scope discipline):
+- No application service for task creation/mutations (TASK-050).
+- No DTOs, no controllers (TASK-047 board read, TASK-050 task create).
+- No board read endpoint payload assembly (TASK-047).
+- No timeline read payload (TASK-067).
+
+Follow-up risk / notes:
+- `status` and `priority` are String in Java but constrained by a DB CHECK.
+  If a future task introduces typed enums, the entity setters will need
+  validation moved Java-side. For MVP, the DB constraint is enforcement enough.
+- `sort_order` defaults to 0 in both schema and entity. Callers inserting into
+  a non-empty column must pick an appropriate value (e.g., max(sort_order)+1).
+  TASK-050 (POST /api/projects/{projectId}/tasks) is the natural place to
+  encode that policy.
+- Estimated hours uses NUMERIC(6,2): max 9999.99 hours per task. Exceeding that
+  is unrealistic for MVP; if it ever matters, widen the precision in a future
+  migration.
