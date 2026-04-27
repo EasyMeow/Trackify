@@ -1780,3 +1780,53 @@ Follow-up for TASK-054:
 - TASK-054 should import `useSelectedTaskId` from `modules/task/hooks/useSelectedTaskId` — no refactoring needed.
 - `GET /api/tasks/{taskId}` (TASK-052) is ready; TASK-054 can call it with a TanStack Query `useQuery` keyed on `['tasks', taskId]`.
 - The `TaskResponse` interface in `modules/kanban/types/task.ts` is usable as-is; if `modules/task/types/` is introduced for the drawer, consider moving the type there with a re-export from kanban.
+
+## 2026-04-27 — TASK-054: Render the task detail drawer
+
+Files added:
+- `frontend/src/modules/task/api/taskDetailApi.ts` — `taskDetailApi.getTask(taskId)` calling `httpClient.get('/tasks/${taskId}')`. Re-imports `TaskResponse` from `modules/kanban/types/task` (single source of truth; no DTO duplication).
+- `frontend/src/modules/task/hooks/useTaskDetail.ts` — TanStack Query hook. `useQuery({ queryKey: ['tasks', taskId], queryFn: () => taskDetailApi.getTask(taskId!), enabled: !!taskId })`. Accepts `string | null` so callers do not need to gate.
+- `frontend/src/modules/task/components/TaskDrawer.tsx` (~190 lines) — fixed right-side panel (420px via `--layout-drawer-width`) over a semi-transparent backdrop. `role="dialog" aria-modal="true" aria-labelledby="task-drawer-title"`. Escape key closes (document-level keydown listener registered while taskId is non-null). Backdrop click closes. Renders title, description (with muted "No description" placeholder), status badge (color-coded: success/info/accent), priority badge (color-coded: muted/warning/danger), start/due dates (date-fns `format(parseISO(...), 'PP')`), and a footer with createdAt/updatedAt. Loading and error states render in the header so the dialog still has a label.
+
+Files modified:
+- `frontend/src/pages/ProjectBoardPage.tsx` — removed the temporary `selectedBannerStyle`, `closeBtnStyle`, and the banner JSX block from TASK-053. Imported and rendered `<TaskDrawer taskId={selectedTaskId} onClose={() => setSelectedTaskId(null)} />` at the bottom of the section. The `useSelectedTaskId` hook + `BoardColumnView` wiring from TASK-053 stayed intact.
+
+Design decisions:
+- Drawer state is the URL `?taskId` only (architecture.md §6). No Zustand store for "is drawer open" — open-ness is derived from `selectedTaskId !== null`. This means refresh keeps the drawer open and a deep link works.
+- API helper lives in `modules/task/api/`, hook in `modules/task/hooks/`, component in `modules/task/components/`. The drawer is squarely in the task domain; kanban remains a view domain that calls into task via the URL state hook (no inverted dependency).
+- `TaskResponse` is reused from `modules/kanban/types/task.ts` rather than redeclared. A future cleanup could move the type into `modules/task/types/` and re-export from kanban, but that is a refactor task on its own — not in TASK-054 scope.
+- Inline styles + CSS tokens (no Tailwind, no styled-components, no new CSS files), matching the codebase pattern from `ProjectBoardPage`/`DashboardPage`. All tokens used were verified to exist in `frontend/src/shared/styles/tokens.css`.
+- `<>...</>` fragment for backdrop + panel so each gets its own z-index (`--z-drawer` vs `calc(var(--z-drawer) + 1)`) without nesting the panel inside the click-target backdrop.
+- Focus trap was intentionally omitted. The acceptance criteria do not require it; ARIA dialog semantics + Escape + backdrop click are enough for the read-only drawer. TASK-056/057 will add editable inputs and may revisit focus management at that time.
+
+What was tested:
+- `cd frontend && npm run build` -> tsc -b + vite build, 409 modules transformed, 0 errors. Bundle: 367.43 kB / gzip 113.19 kB. Exit 0.
+- `cd frontend && npm run lint` -> only the 2 pre-existing `react-refresh/only-export-components` errors in `src/app/routes.tsx`. Zero new errors in any file touched here.
+- All CSS tokens used by the drawer were verified against `tokens.css` (none missing).
+- Code-path verification end-to-end: `TaskCard` (TASK-053 button) -> `onSelect(id)` -> `useSelectedTaskId.setTaskId` -> URL `?taskId=...` -> `TaskDrawer` reads `selectedTaskId` -> `useTaskDetail(taskId)` enables -> `taskDetailApi.getTask` -> `httpClient.get('/tasks/{id}')` -> backend `GET /api/tasks/{id}` (TASK-052, returns `TaskResponse`).
+- Manual browser test step ("click a task card and confirm the drawer loads the correct task title and metadata") was NOT run — no live browser driver in this environment. This is the same gap that has been logged for TASK-051/053 and will be covered by the MVP smoke pass (TASK-083).
+- `code-reviewer` agent reviewed: PASS-WITH-NOTES. Three minor non-blocking notes: (1) `onClose` is an inline arrow on the page so the drawer's keydown effect re-subscribes on each parent render — functionally correct, minor wasted work; (2) cross-module type import (kanban -> task) is fine for now; (3) backdrop uses a hardcoded rgba that mirrors `--color-text` — fine for a fixed overlay.
+
+Follow-up risk / notes:
+- TASK-055 (`PATCH /api/tasks/{taskId}`) backend should land before TASK-056/057 wire the title/description and priority/date editors. The drawer DOM is structured so the title `<h2>` and description `<p>` can be swapped for inline-editable inputs without restructuring the layout.
+- `useTaskDetail` uses `enabled: !!taskId`, so closing the drawer (taskId -> null) leaves the cached entry under `['tasks', <previous-uuid>]` — TanStack default GC will reclaim it. When TASK-055 lands, the mutation should call `queryClient.setQueryData(['tasks', taskId], ...)` and `invalidateQueries(['projects', projectId, 'board'])` so both the drawer and the board card update.
+- The `onClose` inline-arrow note from code review can be addressed by wrapping in `useCallback` if/when TASK-056 adds more state to the page that triggers extra re-renders. For now the drawer's effect cleanup runs each render, so there is no leak.
+- Keyboard focus is not trapped inside the drawer. Tabbing escapes back to the board. Acceptable for read-only; revisit when editable fields land.
+- The status/priority badge color mapping is defined inline in `TaskDrawer.tsx`. If `BoardColumnView` cards eventually want the same badges, extract into `modules/task/components/StatusBadge.tsx` and `PriorityBadge.tsx`.
+
+## 2026-04-27 — TASK-054: Render the task detail drawer
+
+What changed:
+- Added `frontend/src/modules/task/api/taskDetailApi.ts` — `taskDetailApi.getTask(taskId)` via `httpClient.get`.
+- Added `frontend/src/modules/task/hooks/useTaskDetail.ts` — TanStack Query hook, `enabled: !!taskId`.
+- Added `frontend/src/modules/task/components/TaskDrawer.tsx` — fixed-position right panel with backdrop, Escape key close, aria role="dialog", loading/error states, title/description/status/priority/dates/footer. Pure inline styles + CSS tokens, ~190 lines.
+- Updated `frontend/src/pages/ProjectBoardPage.tsx` — removed temp banner JSX + `selectedBannerStyle` + `closeBtnStyle`, wired `<TaskDrawer taskId={selectedTaskId} onClose={...} />`.
+
+What was tested:
+- `npm run build` — 0 errors, 409 modules transformed.
+- `npm run lint` — only the 2 pre-existing `react-refresh/only-export-components` errors in `routes.tsx`, zero new errors.
+- Browser click-through NOT available in this environment; manual verification required by human.
+
+Follow-up risk:
+- Browser verification needed: click a task card, confirm drawer opens with correct title/metadata, backdrop click and Escape both close, 403/404 shows error text.
+- TaskResponse type still lives in `kanban/types/task.ts`; if a future task moves it to `task/types/`, update the import in `taskDetailApi.ts` and `useTaskDetail.ts`.

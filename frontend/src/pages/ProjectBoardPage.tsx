@@ -4,6 +4,7 @@ import { useBoardQuery } from '../modules/kanban/hooks/useBoardQuery';
 import { useCreateTask } from '../modules/kanban/hooks/useCreateTask';
 import { BoardColumnView } from '../modules/kanban/components/BoardColumnView';
 import { useSelectedTaskId } from '../modules/task/hooks/useSelectedTaskId';
+import { TaskDrawer } from '../modules/task/components/TaskDrawer';
 import { ApiError } from '../shared/api/httpClient';
 
 const pageStyle: React.CSSProperties = {
@@ -83,31 +84,6 @@ const errorTextStyle: React.CSSProperties = {
   margin: 0,
 };
 
-/* Temporary task-selected banner — TASK-054 will replace this with the real drawer */
-const selectedBannerStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 'var(--space-3)',
-  padding: 'var(--space-2) var(--space-3)',
-  backgroundColor: 'var(--color-accent-soft)',
-  border: '1px solid var(--color-border-strong)',
-  borderRadius: 'var(--radius-md)',
-  fontSize: 'var(--font-size-sm)',
-  color: 'var(--color-text)',
-};
-
-const closeBtnStyle: React.CSSProperties = {
-  marginLeft: 'auto',
-  padding: 'var(--space-1) var(--space-3)',
-  fontSize: 'var(--font-size-xs)',
-  fontWeight: 'var(--font-weight-medium)',
-  color: 'var(--color-text-muted)',
-  backgroundColor: 'var(--color-surface)',
-  border: '1px solid var(--color-border)',
-  borderRadius: 'var(--radius-md)',
-  cursor: 'pointer',
-};
-
 export default function ProjectBoardPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const { data, isLoading, isError } = useBoardQuery(projectId);
@@ -117,23 +93,6 @@ export default function ProjectBoardPage() {
     <section style={pageStyle}>
       <h1 style={headingStyle}>Board</h1>
       <CreateTaskRow projectId={projectId} />
-
-      {/* Temporary selection indicator — replaced by real drawer in TASK-054 */}
-      {selectedTaskId && (
-        <div style={selectedBannerStyle} role="status" aria-live="polite">
-          <span>
-            Selected task: <strong>{selectedTaskId}</strong>
-          </span>
-          <button
-            type="button"
-            style={closeBtnStyle}
-            onClick={() => setSelectedTaskId(null)}
-            aria-label="Close selected task"
-          >
-            Close
-          </button>
-        </div>
-      )}
 
       {isLoading && <p style={mutedStyle}>Loading board…</p>}
       {isError && <p style={{ ...mutedStyle, color: 'var(--color-danger)' }}>Couldn't load board.</p>}
@@ -149,6 +108,7 @@ export default function ProjectBoardPage() {
           ))}
         </div>
       )}
+      <TaskDrawer taskId={selectedTaskId} onClose={() => setSelectedTaskId(null)} />
     </section>
   );
 }
