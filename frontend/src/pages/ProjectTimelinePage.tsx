@@ -57,7 +57,7 @@ export default function ProjectTimelinePage() {
     );
   }
 
-  const { ganttTasks, datelessCount } = mapTimelineToGantt(data.tasks);
+  const { ganttTasks, datelessCount } = mapTimelineToGantt(data.tasks, data.dependencies);
 
   if (ganttTasks.length === 0) {
     return (

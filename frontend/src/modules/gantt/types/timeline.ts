@@ -11,7 +11,15 @@ export interface TimelineTask {
   dueDate: string | null;
 }
 
+export interface Dependency {
+  id: string;
+  predecessorTaskId: string;
+  successorTaskId: string;
+  createdAt: string;
+}
+
 export interface TimelineResponse {
   projectId: string;
   tasks: TimelineTask[];
+  dependencies: Dependency[];
 }

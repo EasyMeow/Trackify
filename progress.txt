@@ -2639,3 +2639,32 @@ Modified:
 - **`findByPredecessorTaskIdIn` performance for large projects.** The derived query becomes `WHERE predecessor_task_id IN (?, ?, ...)` with one parameter per task. PostgreSQL handles thousands of parameters fine, but extremely large projects (> 32k tasks) could hit the protocol-level parameter limit. Not a real risk at MVP scale; if it ever surfaces, swap to `@Query("SELECT d FROM TaskDependency d WHERE d.predecessorTaskId IN (SELECT t.id FROM Task t WHERE t.projectId = :projectId)")`.
 - **`DependencyResponse` is now part of two endpoint contracts.** Any future change (e.g., adding a `lagDays` field) will affect both `POST /api/tasks/{taskId}/dependencies` and `GET /api/projects/{projectId}/timeline`. That's the deliberate consequence of reusing the DTO; the alternative (two parallel DTOs) would have created drift risk instead.
 - **Top-level list scales linearly with project edge count.** Even very dense graphs are still O(E) on the wire. No paging is needed at MVP scale — the same payload already ships every task in the project.
+
+## 2026-04-28 — TASK-074: Render dependency lines in the Gantt view
+
+### Files modified
+
+- `frontend/src/modules/gantt/types/timeline.ts` — added `Dependency` interface; extended `TimelineResponse` with `dependencies: Dependency[]`.
+- `frontend/src/modules/gantt/utils/mapTimelineToGantt.ts` — added second param `dependencies: Dependency[] = []`; pre-computes a `Set` of rendered task IDs, builds a `Map<successorId, predecessorId[]>` filtering out dateless predecessors, then attaches `dependencies` to each gantt task entry.
+- `frontend/src/pages/ProjectTimelinePage.tsx` — passes `data.dependencies` as second arg to `mapTimelineToGantt`.
+
+### Key design decisions
+
+- Default parameter `[]` keeps the signature backward-compatible; no other call-sites needed touching.
+- Two-pass approach: first pass collects rendered IDs, second pass filters dependency edges — avoids gantt-task-react rendering arrows to non-existent bars which would crash or silently fail.
+- Used spread with conditional `...(predecessors ? { dependencies: predecessors } : {})` to avoid emitting `dependencies: undefined` on tasks with no incoming edges, keeping the gantt task objects clean.
+
+### What was tested
+
+- `npm run build` (tsc strict + vite): passed with zero new errors.
+- `npm run lint`: only the two pre-existing `react-refresh/only-export-components` errors in `routes.tsx`; no new issues.
+- End-to-end browser verification was not performed (no seeded dependency data available in the dev environment without running TASK-075 first to create dependencies through the UI).
+
+### Follow-up notes for TASK-075
+
+- TASK-075 needs to add create/delete UI in the task drawer so users can actually create dependencies that will be visible as Gantt arrows.
+- The `Dependency` type is already exported from `types/timeline.ts` and can be imported directly by TASK-075 components without additional type work.
+
+### Follow-up risks
+
+- If `gantt-task-react` renders arrows but a predecessor bar is off-screen (before the current view window), it may clip or render partially. Not a bug introduced here — library behavior — but worth noting for future polish.
