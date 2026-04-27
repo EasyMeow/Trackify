@@ -2990,3 +2990,28 @@ Added a small Zustand toast slice plus a fixed-position `<ToastViewport>` mounte
 
 - **`useProject` and `useBoardQuery` fire independent requests.** The page makes two parallel fetches; there is no dependent loading relationship. Both show their own loading/error states independently, which is acceptable for an MVP but could look slightly jarring if one resolves much later than the other.
 - **Column order relies on `position` being contiguous and 0-indexed.** If a future migration changes the seeding, the displayed index (`position + 1`) may skip numbers. A pure positional rank (array index after sort) would be more robust — easy to change in a future polish task.
+
+## 2026-04-28 — TASK-081: finish the README runbook
+
+What changed:
+- Rewrote `README.md` from the TASK-005 stub into a full local-setup runbook: prerequisites (JDK 21, Node 20+, Docker Compose v2), `cp .env.example .env`, an env-var reference table grouped by frontend/backend/postgres/session/auth, ordered start sequence (Postgres → backend `./mvnw spring-boot:run` → frontend `npm install && npm run dev`), health probe, and links back to architecture.md.
+- Added a "Creating the first user" section. There is no public registration endpoint or sign-up screen in the MVP and no startup runner consumes `AUTH_BOOTSTRAP_ADMIN_*`, so the runbook documents the only path that actually works today: generate a BCrypt hash with `htpasswd -bnBC 10 "" '<pwd>' | tr -d ':\n'` (cost must match `AUTH_PASSWORD_ENCODER_STRENGTH`) and `INSERT INTO users (...)` via `docker exec -it trackify-db psql`. Notes the auto-personal-workspace bootstrap on first login and lists `POST /api/auth/login`, `POST /api/logout`, `GET /api/me`.
+- Added a "Common commands" block per surface (Database / Backend / Frontend) so a developer doesn't have to re-derive flags. Repeated the JPA-validate + Flyway-only-via-new-migration rule next to the backend commands so a new dev sees it.
+- Added Troubleshooting (Flyway boot failure, 401 from CORS/cookie misconfig, npm install resolve failure, INVALID_CREDENTIALS from a wrong-cost hash) and Production hardening notes (cookie `Secure`/`SameSite=strict`, replace `changeme`, single-origin TLS proxy, bump BCrypt cost).
+
+What was tested:
+- Per task `test_steps`: read README top to bottom and verified a new developer would not have to guess. Cross-checked every claim against the real codebase:
+  * `.env.example` keys — every variable in the table exists in `.env.example` lines 9–57.
+  * Health endpoint — `HealthController` exposes `GET /api/health` (matched in `backend/src/main/java/com/trackify/common/HealthController.java`).
+  * Login endpoint — `LoginController` is `@RequestMapping("/api/auth")` + `@PostMapping("/login")` taking `LoginRequest{login, password}`; logout at `POST /api/logout`. Both confirmed in `backend/src/main/java/com/trackify/auth/controller/`.
+  * Personal-workspace bootstrap on first login — `LoginController` calls `WorkspaceBootstrapService#ensurePersonalWorkspace` (idempotent), as documented.
+  * Bootstrap-admin properties — `AuthProperties.Bootstrap.Admin` is bound but `grep -R "authProperties.bootstrap\|admin()\|CommandLineRunner\|ApplicationRunner"` across `backend/src/main` found zero consumers, so the runbook honestly flags the keys as inert and points at the manual SQL path.
+  * Backend commands - match the Maven Wrapper at backend/mvnw.
+  * Frontend commands — match `frontend/package.json` scripts (`dev`, `build`, `lint`, `preview`).
+- No backend code changed, so the per-instruction `./mvnw -f backend compile test-compile` / `test` step is not required for this task. (Doc-only change; Maven build state is unaffected.)
+
+Follow-up risk / notes:
+- The `htpasswd` instruction depends on `apache2-utils` / `httpd-tools` being installed locally. Most macOS systems have it via the system `httpd`, most Linux distros via the package above, but Windows-without-WSL users will need an alternative. Acceptable for an MVP runbook; if it bites, a future polish task could ship a one-shot Maven goal (`exec:java` wrapping a tiny `BcryptHashMain`) so devs don't need an external tool.
+- The runbook documents what works now, but `AUTH_BOOTSTRAP_ADMIN_*` being bound-but-unused is a real footgun. Worth a follow-up task to either (a) wire a `CommandLineRunner` that calls `UserRegistrationService#register` with those values when all three are set, or (b) drop the keys from `.env.example` + `AuthProperties` to remove the dead config surface. Either resolves the inconsistency the README has to call out today.
+- Did not cover the test-running quickstart from a CI-machine perspective (no test profile, no fixture seed). MVP scope is local dev; CI runbook can come later if the project gains CI.
+- TASK-082 (manual smoke checklist) and TASK-083 (run the smoke pass) are next. The runbook deliberately doesn't pre-empt them — it stops at "you can now start the app and sign in".
