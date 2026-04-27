@@ -2994,7 +2994,7 @@ Added a small Zustand toast slice plus a fixed-position `<ToastViewport>` mounte
 ## 2026-04-28 — TASK-081: finish the README runbook
 
 What changed:
-- Rewrote `README.md` from the TASK-005 stub into a full local-setup runbook: prerequisites (JDK 21, Node 20+, Docker Compose v2), `cp .env.example .env`, an env-var reference table grouped by frontend/backend/postgres/session/auth, ordered start sequence (Postgres → backend `./mvnw spring-boot:run` → frontend `npm install && npm run dev`), health probe, and links back to architecture.md.
+- Rewrote `README.md` from the TASK-005 stub into a full local-setup runbook: prerequisites (JDK 21, Node 20+, Docker Compose v2), `cp .env.example .env`, an env-var reference table grouped by frontend/backend/postgres/session/auth, ordered start sequence (Postgres → backend `./mvnw spring-boot:run` → frontend `npm install && npm run dev`), health probe, and links back to `architecture.md` and `CLAUDE.md`.
 - Added a "Creating the first user" section. There is no public registration endpoint or sign-up screen in the MVP and no startup runner consumes `AUTH_BOOTSTRAP_ADMIN_*`, so the runbook documents the only path that actually works today: generate a BCrypt hash with `htpasswd -bnBC 10 "" '<pwd>' | tr -d ':\n'` (cost must match `AUTH_PASSWORD_ENCODER_STRENGTH`) and `INSERT INTO users (...)` via `docker exec -it trackify-db psql`. Notes the auto-personal-workspace bootstrap on first login and lists `POST /api/auth/login`, `POST /api/logout`, `GET /api/me`.
 - Added a "Common commands" block per surface (Database / Backend / Frontend) so a developer doesn't have to re-derive flags. Repeated the JPA-validate + Flyway-only-via-new-migration rule next to the backend commands so a new dev sees it.
 - Added Troubleshooting (Flyway boot failure, 401 from CORS/cookie misconfig, npm install resolve failure, INVALID_CREDENTIALS from a wrong-cost hash) and Production hardening notes (cookie `Secure`/`SameSite=strict`, replace `changeme`, single-origin TLS proxy, bump BCrypt cost).
@@ -3006,7 +3006,7 @@ What was tested:
   * Login endpoint — `LoginController` is `@RequestMapping("/api/auth")` + `@PostMapping("/login")` taking `LoginRequest{login, password}`; logout at `POST /api/logout`. Both confirmed in `backend/src/main/java/com/trackify/auth/controller/`.
   * Personal-workspace bootstrap on first login — `LoginController` calls `WorkspaceBootstrapService#ensurePersonalWorkspace` (idempotent), as documented.
   * Bootstrap-admin properties — `AuthProperties.Bootstrap.Admin` is bound but `grep -R "authProperties.bootstrap\|admin()\|CommandLineRunner\|ApplicationRunner"` across `backend/src/main` found zero consumers, so the runbook honestly flags the keys as inert and points at the manual SQL path.
-  * Backend commands - match the Maven Wrapper at backend/mvnw.
+  * Backend commands — match `CLAUDE.md` and the Maven Wrapper at `backend/mvnw`.
   * Frontend commands — match `frontend/package.json` scripts (`dev`, `build`, `lint`, `preview`).
 - No backend code changed, so the per-instruction `./mvnw -f backend compile test-compile` / `test` step is not required for this task. (Doc-only change; Maven build state is unaffected.)
 
@@ -3015,3 +3015,43 @@ Follow-up risk / notes:
 - The runbook documents what works now, but `AUTH_BOOTSTRAP_ADMIN_*` being bound-but-unused is a real footgun. Worth a follow-up task to either (a) wire a `CommandLineRunner` that calls `UserRegistrationService#register` with those values when all three are set, or (b) drop the keys from `.env.example` + `AuthProperties` to remove the dead config surface. Either resolves the inconsistency the README has to call out today.
 - Did not cover the test-running quickstart from a CI-machine perspective (no test profile, no fixture seed). MVP scope is local dev; CI runbook can come later if the project gains CI.
 - TASK-082 (manual smoke checklist) and TASK-083 (run the smoke pass) are next. The runbook deliberately doesn't pre-empt them — it stops at "you can now start the app and sign in".
+
+
+## 2026-04-28 — TASK-082: Add a manual smoke checklist
+
+### Files added
+
+- `docs/smoke-checklist.md` — single-page, top-to-bottom manual acceptance pass for the MVP. 11 numbered sections (0 Pre-flight, 1 Authentication, 2 Workspace load, 3 Project creation, 4 Board usage, 5 Task editing/drawer, 6 Comments, 7 Timeline edits, 8 Dependency management, 9 Authorization spot-checks, 10 Read-only project settings) plus a Sign-off block. Every flow named in the acceptance criterion (login, workspace load, project creation, board usage, task editing, comments, timeline edits, dependency management) has at least one section, and each step is a concrete checkbox (`- [ ] ...`) describing where to click, what URL/devtools tab to look at, and what the expected outcome is.
+
+### Key design decisions
+
+- **No `docs/` directory existed before this task.** Created on first write — chose `docs/smoke-checklist.md` as the canonical location since the acceptance criterion calls for the checklist "under `docs/`" and a new developer searching for it will look there before anything else.
+- **Concrete, not aspirational.** Every step describes behaviour that is actually implemented today. Cross-checked each against real code: `/sign-in`, `/`, `/projects/:projectId/{board,timeline,settings}` exist in `frontend/src/app/routes.tsx`; the task drawer URL convention `?taskId=<id>` is in `useSelectedTaskId.ts`; the dependency manager (`TaskDependencyManager.tsx`) is mounted inside the task drawer, not the timeline UI; default columns `Todo`/`In Progress`/`Done` come from the TASK-045 seed; `ApiError` envelope shape is from TASK-077; the `SESSION` cookie name is from Spring Session JDBC default.
+- **Sign-out path noted as a known gap.** `AppShell.tsx` line 45 still has the placeholder `Sign out — TASK-029/030` text in the sidebar with no actual button. The backend logout endpoint works; only the UI affordance is missing. Documented this honestly with a `curl -X POST /api/logout` step so the smoke pass still validates the *backend* logout flow, and called out the missing UI button as a known gap. This is exactly the kind of issue TASK-083 is designed to catch and fix as the "first blocking defect" — flagging it here means TASK-083's run will hit it, document it, and (per its own scope) fix the first one found.
+- **Failure-path coverage uses devtools "Block request URL".** Toast-on-failure was introduced in TASK-079; the smoke checklist includes one block-the-request step per mutation type (`/move`, task `PATCH`, `comments` POST, `/schedule` PATCH) so the toast pathway from TASK-079 is actually exercised, not assumed. This matches the `test_steps` in TASK-079 which only required forcing one mutation failure.
+- **Authorization spot-checks (§9) are deliberately outside the eight required flows.** TASK-076/TASK-077 added cross-workspace authorization checks and standardized the 401/403/404 envelope; the smoke pass will catch a regression there only if a member of W1 tries to read W2's project. Calling this out as its own short section keeps the eight required flows clean and makes the cross-workspace check a single discrete checkbox.
+- **Pre-flight (§0) added on top of the eight required flows.** Without a working DB, healthy backend, and signed-in user, every later step would fail for the wrong reason. The pre-flight gate makes failures self-attributable so the runner can record an *exact* first-failing-step for TASK-083.
+- **One-task-per-line, sequential numbering.** Easier to reference in a TASK-083 progress note ("§7 step 4 failed because…") than nested headings or bullets.
+
+### What was tested
+
+- Per the task's own `test_steps`: read `docs/smoke-checklist.md` top to bottom and confirmed every core user flow listed in the acceptance criterion has at least one concrete checkbox step. Mapping:
+  * login → §1 (8 checkboxes covering redirect, bad creds, good creds, /api/me, cookie, reload persistence, logout via curl).
+  * workspace load → §2 (4 checkboxes covering switcher visibility, GET /api/workspaces, second-login no-duplicate, multi-user isolation).
+  * project creation → §3 (6 checkboxes covering empty state, optimistic insert, reload persistence, validation, default-column seed order, navigation).
+  * board usage → §4 split into Read / Create / DnD (10 checkboxes including optimistic move + rollback on failure).
+  * task editing → §5 (10 checkboxes covering URL state, title/description/priority/dates editors, validation, toast).
+  * comments → §6 (7 checkboxes covering empty state, GET, POST, reload, validation, toast, multi-user observability).
+  * timeline edits → §7 (10 checkboxes covering Gantt render, drag-move, edge resize, persistence, rollback, board↔Gantt parity).
+  * dependency management → §8 (9 checkboxes covering add, remove, render line, reload persistence, self-dep rejection, duplicate rejection, cross-project rejection).
+- Verified all referenced URLs/endpoints exist in code: `/api/health`, `/api/me`, `/api/workspaces`, `GET /api/projects/{id}/board`, `PATCH /api/tasks/{id}/move`, `PATCH /api/tasks/{id}/schedule`, `POST /api/tasks/{id}/dependencies`, `GET /api/tasks/{id}/comments`, `POST /api/tasks/{id}/comments`, `POST /api/logout`. All confirmed by repository file structure (frontend route table, modules/api files, backend controller naming).
+- No backend or frontend code touched, so per-task instructions for `./mvnw -f backend compile test-compile` / `./mvnw -f backend test` are not required (doc-only change).
+
+### Follow-up risks
+
+- **Sign-out UI gap is a real defect** — the sidebar placeholder text from TASK-029/030 era never got replaced with a real button in AppShell. Documented in §1 of the checklist with a curl workaround. TASK-083's "first blocking defect" rule will catch this; expect the fix to be a small button + `useLogout` hook call in `AppShell.tsx`. Out of scope for this task (the criterion is checklist authorship, not UX completeness), but called out as the most likely TASK-083 hit.
+- **Devtools "Block request URL" requires a Chromium browser.** Listed as a convention in the checklist preamble; Firefox users have an equivalent under "Request Blocking" in the Network tab. If a future smoke runner is on Safari they will need to use the proxy/`mitmproxy` fallback. Not worth a tooling matrix in the doc — Chromium is the project's de-facto browser.
+- **No automated end-to-end harness.** Per architecture.md §13.2, the frontend uses manual browser verification by default for MVP. The smoke checklist is by definition manual; converting it to Playwright/Cypress would be a separate, larger task and is out of scope.
+- **Two-user authorization checks (§9) require seeding a second user.** The README's "Creating the first user" section only documents seeding *one* user. The checklist quietly assumes a second user exists when it gets to multi-user steps (§2 last item, §6 last item, §9 second/third items). For TASK-083, the runner can either (a) skip those specific items and note them as deferred or (b) seed a second user with the same `htpasswd` flow — both are acceptable. A future polish task could ship a small `seed-users.sql` to make the multi-user case trivial.
+- **No section for `ProjectSettingsPage`-only flows** beyond the read-only display check (§10). The page is read-only by design (TASK-080), so there is nothing to mutate; if a future task adds edit affordances, §10 will need new checkboxes.
+- **TASK-083 is now unblocked.** Its `start_condition` is "feature-complete on paper but not validated as a whole" — that is now exactly the state. The runner of TASK-083 should follow this checklist top to bottom, record the first failing step in `progress.txt`, fix it, rerun the failing step until it passes, and then flip TASK-083 to `done`.
