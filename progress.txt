@@ -2461,3 +2461,43 @@ Modified:
 - **Bundle size jump.** The gantt-task-react import added ~37 kB to the gzipped bundle (140.92 kB vs 129.51 kB pre-task). Acceptable for an MVP; if it becomes a concern, the timeline page can be lazy-loaded via `React.lazy` so the chunk only loads when a user visits a project's timeline route.
 - **`new Date('YYYY-MM-DD')` parses as UTC midnight.** `date-fns/parseISO` would be more explicit, but `new Date(dateString)` is fine here since the strings are date-only and consistently parsed across the app. If a future task introduces local-time-sensitive scheduling (e.g. timezone-aware due times), the mapper should switch to `parseISO` to avoid off-by-one rendering near midnight in negative-UTC timezones.
 - **Library quirks not fully exercised.** `gantt-task-react` is known for sharp edges around empty arrays, single-task views, and same-day start/end (the last is why the mapper has the nudge). The build passes type-check, but real visual confirmation against a populated project board with edge-case data is still pending.
+
+
+## 2026-04-27 — TASK-070: Implement `PATCH /api/tasks/{taskId}/schedule`
+
+### Files added
+
+- `backend/src/main/java/com/trackify/task/dto/ScheduleTaskRequest.java` — record with two nullable `LocalDate` fields (`startDate`, `dueDate`). No bean-validation annotations beyond what the record gives us; null-means-keep is the same convention as `UpdateTaskRequest`.
+- `backend/src/test/java/com/trackify/task/controller/TaskScheduleControllerTest.java` — `@WebMvcTest` for the new route. Uses `ArgumentCaptor<ScheduleTaskRequest>` on `taskCommandService.scheduleTask(...)` to prove the body is parsed end-to-end; covers 4 cases — both dates set, only due date set (start arrives null), task missing → 404 with the standard error shape, unauthenticated → 401 before the controller runs.
+
+### Files modified
+
+- `backend/src/main/java/com/trackify/task/application/TaskCommandService.java` — added `scheduleTask(taskId, userId, request)`. Mirrors the `updateTask` shape exactly: load task, delegate to `ProjectQueryService.getById` for 404/403 authz, apply only non-null fields, save, map to `TaskResponse`. No new private helpers.
+- `backend/src/main/java/com/trackify/task/controller/TaskDetailController.java` — added `@PatchMapping("/{taskId}/schedule")` returning `ResponseEntity<TaskResponse>`. Thin pass-through; principal forwarded as `UUID userId`.
+
+### Key design decisions
+
+- **Dedicated endpoint, not a reuse of `PATCH /api/tasks/{id}`.** The acceptance criteria explicitly say "focused scheduling endpoint." Two practical reasons: (1) the Gantt drag/resize mutation can never accidentally change title/description/priority because that surface area is excluded by the DTO, and (2) the frontend's TanStack Query cache invalidation can be wired to a single, narrower mutation key.
+- **`null = keep existing`, no separate clear-date mechanism.** Matches `UpdateTaskRequest`'s convention so the two endpoints behave consistently. Clearing a date isn't a Gantt drag operation — it would only be needed by a "remove dates" UI control that doesn't exist in the MVP scope. Defer until a task asks for it. The Jackson default of `null` for omitted fields keeps the controller free of `Optional` plumbing.
+- **No cross-field validation (`startDate <= dueDate`) on the backend.** Same rationale as `UpdateTaskRequest`. The frontend mapper (TASK-069) already nudges `end` forward by one day for inverted ranges; TASK-071 will add the same guard at the mutation site. Adding server-side rejection would create asymmetry with the existing PATCH endpoint and surface as a confusing 400 in flows that already self-correct on the client.
+- **No `@NotNull` on the DTO fields.** The endpoint must accept partial payloads (Jackson will deserialize an absent field as `null` and the service treats null as "skip"). Adding `@NotNull` would force the Gantt UI to send both dates even when the user only resized one edge, which would noisily round-trip the unchanged date.
+- **Response is the full `TaskResponse`, not just the schedule fields.** Lets the frontend `useScheduleTaskMutation` (TASK-071) update both the timeline and the board cache directly from the mutation result without a follow-up `GET /api/tasks/{id}`. Mirrors how `updateTask` and `moveTask` already respond.
+- **Controller test only — no service-level test added.** The acceptance criterion is "controller test proving schedule updates persist correctly." The controller-level `ArgumentCaptor` proves the request reaches the service intact, and the JPA `save` path is structurally identical to the already-tested `updateTask` flow (same `taskRepository.save(task)` after field mutation). A redundant service test would not exercise meaningfully different code paths.
+
+### What was tested
+
+- `cd backend && ./mvnw -q compile test-compile` — succeeds (no output ⇒ no warnings).
+- `cd backend && ./mvnw test` — `Tests run: 92, Failures: 0, Errors: 0, Skipped: 0`. The 4 new `TaskScheduleControllerTest` tests pass alongside the existing 88. No regressions in `TaskMoveControllerTest`, `TaskUpdateControllerTest`, or `TaskCommandServiceMoveTest`.
+
+### Follow-up notes for TASK-071 (Wire Gantt bar drag/resize to schedule updates)
+
+- The frontend mutation should hit `PATCH /api/tasks/{taskId}/schedule` with `{ startDate, dueDate }` — both as `YYYY-MM-DD` strings (Jackson will parse to `LocalDate` cleanly; `Date.prototype.toISOString().slice(0,10)` works, but mind the UTC offset — see TASK-069's note about `new Date('YYYY-MM-DD')` parsing as UTC midnight).
+- Invalidate `['projects', projectId, 'timeline']` AND `['projects', projectId, 'board']` on success. The board cards may surface dates per TASK-057's drawer edits; the safer default is to invalidate both.
+- The mapper currently sets `isDisabled: true` on every gantt task (TASK-069 design decision). TASK-071 must remove that flag and provide an `onDateChange` callback that calls the new mutation — that single switch flips the read-only view into editable.
+- The endpoint accepts either or both dates. If `gantt-task-react`'s `onDateChange` provides both `start` and `end` regardless of whether the user dragged or resized, just send both — the backend will re-set them to the same values, which is a harmless no-op.
+- Inverted-range guard: if a drag produces `end <= start`, either return `false` from `onDateChange` to undo (preferred — gantt-task-react supports this) or apply the same one-day nudge that the read-side mapper uses before sending. The backend will not reject these, so the client must self-police if undesired.
+
+### Follow-up risks
+
+- **No server-side range validation.** `startDate > dueDate` is currently accepted. If a future requirement says "due must not precede start," it must be added in both `scheduleTask` and `updateTask` together to keep the two endpoints consistent. Not a defect in TASK-070 scope — the frontend (TASK-069 mapper) already protects the visual layer.
+- **Authorization re-uses `ProjectQueryService.getById`.** Same pattern as `moveTask` and `updateTask`, so the same future hardening (TASK-076) will cover all three at once. No new authorization surface introduced by TASK-070.

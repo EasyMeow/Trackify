@@ -7,6 +7,7 @@ import com.trackify.task.domain.Task;
 import com.trackify.common.exception.NotFoundException;
 import com.trackify.task.dto.CreateTaskRequest;
 import com.trackify.task.dto.MoveTaskRequest;
+import com.trackify.task.dto.ScheduleTaskRequest;
 import com.trackify.task.dto.TaskResponse;
 import com.trackify.task.dto.UpdateTaskRequest;
 import com.trackify.task.infrastructure.TaskRepository;
@@ -204,6 +205,50 @@ public class TaskCommandService {
 
         task.setColumnId(request.columnId());
         task.setSortOrder(request.sortOrder());
+
+        Task saved = taskRepository.save(task);
+        return toResponse(saved);
+    }
+
+    /**
+     * Updates only the schedule fields ({@code startDate}, {@code dueDate}) of a
+     * task (TASK-070). Backs the Gantt timeline drag-and-resize flow.
+     *
+     * <p>Authorization: loads the task, then delegates to
+     * {@link ProjectQueryService#getById} which throws 404/403 if the caller is
+     * not a workspace member.
+     *
+     * <p>Only non-null fields in {@code request} are applied; null fields are left
+     * unchanged on the persisted entity. Cross-field validation (start before
+     * due) is not enforced — the Gantt frontend guards against inverted ranges
+     * before sending.
+     *
+     * <p>Why a dedicated endpoint instead of reusing {@code PATCH /api/tasks/{id}}:
+     * the timeline drag UI is a focused interaction whose only side effect should
+     * be moving the schedule. A separate route makes that intent explicit and
+     * keeps content updates (title/description/priority) out of the Gantt code path.
+     *
+     * @param taskId  UUID of the task to reschedule
+     * @param userId  authenticated caller's UUID
+     * @param request partial schedule payload; any null field means "keep existing"
+     * @return the updated task as a {@link TaskResponse}
+     * @throws NotFoundException if no task exists with {@code taskId}
+     * @throws com.trackify.common.exception.ForbiddenException if the caller cannot
+     *         access the task's project workspace
+     */
+    public TaskResponse scheduleTask(UUID taskId, UUID userId, ScheduleTaskRequest request) {
+        Task task = taskRepository.findById(taskId)
+                .orElseThrow(() -> new NotFoundException("Task not found"));
+
+        // Authorization — throws 404/403 if not accessible
+        projectQueryService.getById(task.getProjectId(), userId);
+
+        if (request.startDate() != null) {
+            task.setStartDate(request.startDate());
+        }
+        if (request.dueDate() != null) {
+            task.setDueDate(request.dueDate());
+        }
 
         Task saved = taskRepository.save(task);
         return toResponse(saved);

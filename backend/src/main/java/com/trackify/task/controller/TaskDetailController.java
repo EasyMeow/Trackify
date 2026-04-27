@@ -4,6 +4,7 @@ import com.trackify.auth.application.LocalUserPrincipal;
 import com.trackify.task.application.TaskCommandService;
 import com.trackify.task.application.TaskQueryService;
 import com.trackify.task.dto.MoveTaskRequest;
+import com.trackify.task.dto.ScheduleTaskRequest;
 import com.trackify.task.dto.TaskResponse;
 import com.trackify.task.dto.UpdateTaskRequest;
 
@@ -101,6 +102,30 @@ public class TaskDetailController {
             @RequestBody @Valid MoveTaskRequest request,
             @AuthenticationPrincipal LocalUserPrincipal principal) {
         TaskResponse response = taskCommandService.moveTask(taskId, principal.userId(), request);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Updates only the schedule fields ({@code startDate}, {@code dueDate}) of a
+     * task (TASK-070).
+     *
+     * <p>Backs the Gantt timeline drag/resize flow. Both fields in the body are
+     * optional; null means "keep existing". Kept distinct from the generic
+     * {@code PATCH /api/tasks/{taskId}} so the timeline UI's mutation has a
+     * scope it cannot accidentally overshoot (no title/description/priority
+     * changes can leak through).
+     *
+     * @param taskId    UUID of the task being rescheduled
+     * @param request   validated schedule payload
+     * @param principal authenticated caller
+     * @return HTTP 200 with the updated {@link TaskResponse} body
+     */
+    @PatchMapping("/{taskId}/schedule")
+    public ResponseEntity<TaskResponse> scheduleTask(
+            @PathVariable UUID taskId,
+            @RequestBody @Valid ScheduleTaskRequest request,
+            @AuthenticationPrincipal LocalUserPrincipal principal) {
+        TaskResponse response = taskCommandService.scheduleTask(taskId, principal.userId(), request);
         return ResponseEntity.ok(response);
     }
 }
