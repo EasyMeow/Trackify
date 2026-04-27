@@ -1722,3 +1722,33 @@ Follow-up risk / notes:
 - The form does not yet pre-validate against duplicate titles, max-length on description, or invalid date ranges. The backend enforces title length (1–255) and the input has `maxLength={255}`, so the client and server agree on the hard limit.
 - TASK-052 (`GET /api/tasks/{id}`) can reuse `TaskResponse` from `modules/kanban/types/task.ts` as-is. If the task drawer ends up living in `modules/task/`, consider moving the type there and re-exporting from kanban — but only when the drawer lands.
 - TASK-058 (DnD) will need to coexist with this create form; the form is above the column row so it should not interfere with drag handlers.
+
+## 2026-04-27 — TASK-052: Implement GET /api/tasks/{taskId}
+
+Files added:
+- `backend/src/main/java/com/trackify/task/application/TaskQueryService.java` — `@Service @Transactional(readOnly = true)`. `getById(taskId, userId)`: loads the `Task`; throws `NotFoundException("Task not found")` if missing; otherwise calls `ProjectQueryService.getById(task.getProjectId(), userId)` to enforce workspace membership (throws `ForbiddenException` 403 if not a member); returns `TaskResponse`. Reuses the `TaskResponse` record from TASK-050.
+- `backend/src/main/java/com/trackify/task/controller/TaskDetailController.java` — new `@RestController @RequestMapping("/api/tasks")`. Single endpoint `GET /{taskId}` returning HTTP 200 + `TaskResponse`. Thin: only delegates to `TaskQueryService` and pulls `userId` off `LocalUserPrincipal`.
+- `backend/src/test/java/com/trackify/task/controller/TaskDetailControllerTest.java` — `@WebMvcTest(controllers = TaskDetailController.class)` with 4 tests:
+  1. Happy path — authenticated member, 200 + full body asserts (id/projectId/columnId/createdBy/title/status/priority/sortOrder).
+  2. `ForbiddenException` from service -> 403 with standard `{status, error: "FORBIDDEN", message}` envelope.
+  3. `NotFoundException` from service -> 404 with standard envelope.
+  4. Unauthenticated -> Spring Security 401 before controller; `verifyNoInteractions(taskQueryService)`.
+
+Files modified: none beyond the new files above. No DTO changes; `TaskResponse` already exists.
+
+Design decisions:
+- Authorization is delegated to `ProjectQueryService.getById` rather than re-querying workspace membership directly. This is the same pattern used by `TaskCommandService.createTask` (TASK-050) and keeps the membership-check rule in one place. If we later add per-project roles, only `ProjectQueryService` needs to change.
+- Split into a separate `TaskDetailController` rather than adding to the existing `TaskController`. The existing `TaskController` is class-mapped to `/api/projects` (so `POST /{projectId}/tasks`), which is the wrong base path for `/api/tasks/{taskId}`. Adding a method-level full path on the existing controller would mix two unrelated route prefixes. A small, focused `TaskDetailController` keeps each controller's `@RequestMapping` honest.
+- `@Transactional(readOnly = true)` on the service per architecture.md §7.1 — controller stays free of `@Transactional`.
+- Order matters: load task first, then check authorization. If the task does not exist, we return 404 regardless of access. This avoids leaking project existence to a member of a different workspace via 403-vs-404 oracle, and matches the pattern used elsewhere (load-then-authorize).
+- No DTO duplication: `TaskResponse` is reused as-is from TASK-050. The drawer in TASK-054 will consume the same shape.
+
+What was tested:
+- `./mvnw -f backend compile test-compile` -> BUILD SUCCESS.
+- `./mvnw -f backend test` -> BUILD SUCCESS, **58 tests run, 0 failures, 0 errors** (was 54 before; +4 in `TaskDetailControllerTest`). All pre-existing tests still pass.
+- All four scenarios required by the task's `test_steps` ("found, forbidden, and missing task cases") are covered, plus the unauthenticated-401 case.
+
+Follow-up risk / notes:
+- TASK-053 (drawer URL state) and TASK-054 (drawer rendering) can call `GET /api/tasks/{taskId}` and consume `TaskResponse` directly. Frontend types should mirror this DTO; `TaskResponse` already exists in `frontend/src/modules/kanban/types/task.ts` from TASK-051 — that file is reusable, though if a `modules/task/` is introduced for the drawer, the type may want to move there with a re-export from kanban.
+- TASK-055 (`PATCH /api/tasks/{taskId}`) can mirror the same controller-split pattern: keep mutations on a `TaskMutationController` mapped to `/api/tasks` and the existing `TaskController` (`/api/projects`) unchanged. Or, when TASK-055 lands, consider folding `TaskDetailController` and the new mutation handler into a single `/api/tasks` controller and renaming the original `/api/projects/.../tasks` controller to `ProjectTaskController` for clarity.
+- `findById` is single-row by primary key; no N+1 concerns. The entity has flat scalar columns, no eager joins added.
