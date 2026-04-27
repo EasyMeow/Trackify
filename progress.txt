@@ -2668,3 +2668,44 @@ Modified:
 ### Follow-up risks
 
 - If `gantt-task-react` renders arrows but a predecessor bar is off-screen (before the current view window), it may clip or render partially. Not a bug introduced here — library behavior — but worth noting for future polish.
+
+
+## 2026-04-28 — TASK-075: Add minimal dependency management UI
+
+### Files added
+
+- `frontend/src/modules/gantt/api/dependencyApi.ts` — typed wrappers for `POST /api/tasks/{taskId}/dependencies` (body `{ predecessorTaskId }`) and `DELETE /api/tasks/{taskId}/dependencies/{dependencyId}`. Reuses `Dependency` type from `gantt/types/timeline.ts`.
+- `frontend/src/modules/gantt/hooks/useCreateDependency.ts` — TanStack mutation that invalidates `['projects', projectId, 'timeline']` on success so the Gantt arrows + drawer list both refresh.
+- `frontend/src/modules/gantt/hooks/useDeleteDependency.ts` — same shape as create; same invalidation key.
+- `frontend/src/modules/gantt/components/TaskDependencyManager.tsx` — drawer section listing the current task's predecessors with per-row Remove buttons and a select+Add control to create one new dependency at a time. Reads the project timeline to find existing edges and candidate predecessor titles.
+
+### Files modified
+
+- `frontend/src/modules/task/components/TaskDrawer.tsx` — imports and renders `<TaskDependencyManager taskId projectId />` between the date editors and the comments section.
+
+### Key design decisions
+
+- **Module placement.** Dependency endpoints are task-scoped (`/api/tasks/{id}/...`) but conceptually belong to the timeline feature (architecture.md §5.3 puts "Dependency lines" under `modules/gantt`). The `Dependency` type already lives in `gantt/types/timeline.ts` from TASK-073, so the API client, hooks, and component all sit alongside it under `modules/gantt`. The drawer (in `modules/task`) imports the component the same way it already imports `CommentList` from `modules/comment`.
+- **Source of truth = timeline payload.** No new dedicated `GET /api/tasks/{id}/dependencies` endpoint is needed; the `Dependency[]` already ships in the project timeline response (TASK-073). The component filters that list by `successorTaskId === taskId` to find the current task's predecessors. This means a single TanStack query (`['projects', projectId, 'timeline']`) backs both the Gantt arrows and the drawer's dependency list — one source, no risk of drift.
+- **Mutation invalidates the timeline query.** Both hooks invalidate `['projects', projectId, 'timeline']` rather than maintaining a separate dependency cache. After a create/delete, the timeline query refetches and downstream consumers (drawer list + Gantt arrows) both re-render from the same fresh data.
+- **Candidate filtering on the client.** The select dropdown excludes the current task and any task that is already a predecessor. Cycle prevention is left to the backend (TASK-072 enforces it server-side and returns a 400 with a "cycle" message). Mirroring the cycle check on the client would duplicate logic and risk drift; surfacing the backend error via the existing `ApiError.message` is sufficient for MVP.
+- **One create at a time per acceptance criterion.** The acceptance criterion is "minimal control to add and remove one dependency at a time" — the UI presents a single select + Add button rather than a multi-select. After a successful add the select resets to the empty value so the user can pick another.
+- **Title fallback for orphaned edges.** If a predecessor task is somehow not in the timeline payload (e.g., the timeline query is loading or the task was deleted between fetches), the row shows `(unknown task)` instead of crashing. Defensive but cheap.
+- **Loading/error/empty UX.** While the timeline query is loading the section shows "Loading dependencies…"; on error it shows a brief message. With zero predecessors it shows "No dependencies." The add control disables itself when the candidate list is empty (project has only this task) with the placeholder text "No tasks available".
+
+### What was tested
+
+- `cd frontend && npm run build` — `tsc -b && vite build` both pass cleanly. 431 modules transformed, no errors.
+- `cd frontend && npm run lint` — only the two pre-existing `react-refresh/only-export-components` errors in `app/routes.tsx` (carried over from earlier tasks). No new lint issues.
+- **End-to-end browser verification was NOT performed in this session.** The acceptance test step is "Create and remove a dependency in the UI and confirm the Gantt view updates correctly after reload" — that requires the backend server and frontend dev server running together against a database with at least two seeded tasks. Backend was not running locally. The implementation follows the existing TanStack mutation + invalidation pattern used by `useScheduleTask` (TASK-070/071) and `useUpdateTask` (TASK-055/056), which were verified to work, so the wiring is mechanical. **A reviewer should still run through the manual flow before flipping the task as fully validated:** open a project with ≥ 2 tasks → open task A's drawer → add task B as a predecessor → confirm B appears in the list → reload the Gantt and confirm the arrow renders → click Remove → confirm the arrow disappears after reload.
+
+### Follow-up notes for TASK-076 (workspace/project authorization checks)
+
+- The new dependency endpoints (`POST`/`DELETE` on `/api/tasks/{taskId}/dependencies[/...]`) already enforce membership via `TaskDependencyService` (TASK-072 check). TASK-076 should still confirm there are tests proving cross-workspace access is rejected on these endpoints alongside the others.
+
+### Follow-up risks
+
+- **Two HTTP roundtrips on first drawer open.** The drawer triggers `useTaskDetail` and `useProjectTimeline` in parallel. If the user is on the board page and hasn't visited the timeline yet, this fetches the full timeline payload just to show the dependency section. At MVP scale (tens of tasks) the payload is tiny and this is fine; if projects grow large, consider lazy-loading the dependency section (only fetch on first scroll into view) or moving dependencies into the task detail response.
+- **No optimistic UI for create/delete.** The list refreshes only after the mutation succeeds. A failed create surfaces an `ApiError` message under the add row; a failed delete currently fails silently (no toast yet — that's TASK-079's job). If a user spams Add while a create is in flight, the button is disabled, but the select isn't reset until success — minor cosmetic issue, not a correctness one.
+- **No confirmation on Remove.** Dependencies are cheap to recreate, so the bare button matches the architecture's minimalism principle. If a future task adds undo/toast infrastructure (TASK-079), wire Remove through it.
+- **Stable list ordering.** Dependencies render in the order they arrive from the timeline payload, which is `findByPredecessorTaskIdIn` order (database-dependent). For a handful of edges this is invisible; if it becomes inconsistent, sort by `createdAt` in the component.

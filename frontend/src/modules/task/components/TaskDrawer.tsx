@@ -5,6 +5,7 @@ import { useUpdateTask } from '../hooks/useUpdateTask';
 import type { TaskPriority, TaskResponse } from '../../kanban/types/task';
 import { CommentList } from '../../comment/components/CommentList';
 import { CommentComposer } from '../../comment/components/CommentComposer';
+import { TaskDependencyManager } from '../../gantt/components/TaskDependencyManager';
 
 const PRIORITY_OPTIONS: { value: TaskPriority; label: string }[] = [
   { value: 'LOW', label: 'Low' },
@@ -382,6 +383,8 @@ function DrawerContent({ data, taskId, projectId, onClose, registerCancelEdit }:
             />
           </div>
         </div>
+
+        <TaskDependencyManager taskId={taskId} projectId={projectId} />
 
         <CommentList taskId={taskId} />
         <CommentComposer taskId={taskId} />
