@@ -11,6 +11,7 @@ import {
 } from '@dnd-kit/core';
 import { useBoardQuery } from '../modules/kanban/hooks/useBoardQuery';
 import { useCreateTask } from '../modules/kanban/hooks/useCreateTask';
+import { useMoveTask } from '../modules/kanban/hooks/useMoveTask';
 import { BoardColumnView } from '../modules/kanban/components/BoardColumnView';
 import { TaskCard } from '../modules/kanban/components/TaskCard';
 import { useSelectedTaskId } from '../modules/task/hooks/useSelectedTaskId';
@@ -132,6 +133,7 @@ export default function ProjectBoardPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const { data, isLoading, isError } = useBoardQuery(projectId);
   const [selectedTaskId, setSelectedTaskId] = useSelectedTaskId();
+  const moveTask = useMoveTask(projectId);
 
   // Local DnD overrides — taskId → targetColumnId
   // NOT stored in TanStack cache; cleared on next server refetch
@@ -179,12 +181,40 @@ export default function ProjectBoardPage() {
     );
     if (!currentColumn || currentColumn.id === targetColumnId) return;
 
-    // Store the move locally — no backend call until TASK-059/060
+    // Optimistic local move so the card stays put while the request is in flight.
     setDragOverrides((prev) => {
       const next = new Map(prev);
       next.set(draggedTaskId, targetColumnId);
       return next;
     });
+
+    // Append-at-end sort: max existing sortOrder in target column + 1, or 0 if empty.
+    const targetColumn = displayColumns.find((col) => col.id === targetColumnId);
+    const lastSortOrder = targetColumn?.tasks.reduce(
+      (max, task) => (task.sortOrder > max ? task.sortOrder : max),
+      Number.NEGATIVE_INFINITY
+    );
+    const sortOrder =
+      lastSortOrder === undefined || lastSortOrder === Number.NEGATIVE_INFINITY
+        ? 0
+        : lastSortOrder + 1;
+
+    moveTask.mutate(
+      { taskId: draggedTaskId, columnId: targetColumnId, sortOrder },
+      {
+        onSettled: () => {
+          // Drop the local override either way: on success the refetched board
+          // already shows the card in the new column, on error TASK-061 will
+          // add proper rollback — for now snapping back to server truth is fine.
+          setDragOverrides((prev) => {
+            if (!prev.has(draggedTaskId)) return prev;
+            const next = new Map(prev);
+            next.delete(draggedTaskId);
+            return next;
+          });
+        },
+      }
+    );
   }
 
   return (

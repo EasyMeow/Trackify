@@ -2042,3 +2042,47 @@ Follow-up risk / notes for TASK-058 (Kanban DnD):
 - **Status-on-move follow-up**: if the product later needs columns to drive status (e.g., Done column → status DONE so reports work), the cleanest place to add it is right inside `moveTask` — load the destination column, check a column-status mapping table or a name convention, and update `task.setStatus(...)`. Keep it transactional with the column update so they cannot diverge.
 - **Sort-order rebalancing**: if an integration ever inserts ~50 tasks at the same drop position between two existing cards, the doubles will run out of bits to represent the midpoint. Solution: a periodic background job that re-numbers `sort_order` to integer multiples of 1.0 within each column. Not needed at MVP scale (manual board use will rarely exceed 5–10 inserts at the same position).
 - **No service-level test for the cross-project rejection at the controller layer** — only the service unit test covers it. If a future task adds tests that boot the full Spring context with a real DataSource (e.g., a `@SpringBootTest` integration test for the move endpoint), it should also include a cross-project rejection scenario to catch regressions if someone accidentally removes the `findById` call in `moveTask`.
+
+## 2026-04-27 — TASK-060: Wire drag end to the move mutation
+
+### What changed (file by file)
+
+**`frontend/src/modules/kanban/api/taskApi.ts`** — MODIFIED
+- Added `MoveTaskRequest` interface (`{columnId: string, sortOrder: number}`) matching the backend `MoveTaskRequest` record from TASK-059.
+- Added `taskApi.moveTask(taskId, request)` that PATCHes `/tasks/{taskId}/move` and returns the updated `TaskResponse`. Reused the existing `kanban` `taskApi` rather than adding a third API surface — the kanban module owns board interactions, so the move call belongs here.
+
+**`frontend/src/modules/kanban/hooks/useMoveTask.ts`** — NEW FILE
+- TanStack Query mutation hook `useMoveTask(projectId)`.
+- `mutationFn` takes `{taskId, columnId, sortOrder}` and delegates to `taskApi.moveTask`.
+- `onSuccess` invalidates `['projects', projectId, 'board']` so `useBoardQuery` refetches the canonical column ordering. The refetched payload becomes the source of truth for which column the card lives in.
+- Mirrors the structure of the existing `useCreateTask` and `useUpdateTask` hooks for consistency. No optimistic logic in the hook — the `ProjectBoardPage`'s `dragOverrides` map already provides immediate visual feedback (TASK-058).
+
+**`frontend/src/pages/ProjectBoardPage.tsx`** — MODIFIED
+- Imported `useMoveTask` and instantiated it (`const moveTask = useMoveTask(projectId)`).
+- `handleDragEnd` now, on a cross-column drop:
+  1. Sets the optimistic `dragOverrides` entry (kept from TASK-058) so the card visibly stays in the target column while the network call is in flight.
+  2. Computes `sortOrder` as max existing sortOrder in target column + 1, or 0 if empty (append-at-end). Used `Number.NEGATIVE_INFINITY` as the reduce seed to disambiguate "empty column" vs "column with negative sortOrders".
+  3. Calls `moveTask.mutate({taskId, columnId, sortOrder}, { onSettled: ... })`.
+  4. In `onSettled` (success OR error), removes the entry from `dragOverrides`. On success the just-refetched board already shows the card in the new column so the override is redundant. On error the card snaps back to its server position — TASK-061 will replace this with proper optimistic rollback (keep override on success, revert on error with toast).
+
+### Design decisions
+
+- **Append-at-end sort vs. midpoint between neighbors.** For TASK-060 the test step is "move a card to a new column and confirm it remains there after page reload" — the drop position within the new column is not tested. Append-at-end is the simplest correct value that satisfies the requirement and avoids needing the dnd-kit `over` info at the card level (currently `over.id` is the column id, not a card id). Within-column reordering with midpoint sortOrders can be added later when the column droppable is split into per-card slots; this is out of scope for TASK-060.
+- **`onSettled` cleanup of `dragOverrides`** instead of separate `onSuccess`/`onError` handlers. For TASK-060 the behavior is the same in both branches — server data wins after invalidation/refetch. TASK-061 will replace this with `onError`-only rollback so the optimistic state survives a successful round-trip without flicker.
+- **No `setQueryData` cache patch on success.** The mutation returns the updated `TaskResponse` (full task detail), but the board cache is shaped as `{columns: [...]}` — patching it surgically is more code than just letting `invalidateQueries` trigger a refetch. The board endpoint is cheap (one project's columns + cards) so a refetch is fine.
+- **No drawer-side state changes.** Moving a card does not change any of the drawer-displayed fields (title, description, dates, priority); status is intentionally NOT auto-updated on move (per TASK-059's design note). So no `tasks/{id}` cache invalidation is needed.
+- **Ignored same-column drops** (kept the existing early return). With append-at-end, a same-column drop would silently re-append the card to the bottom of its own column, which is surprising. TASK-061 or a later within-column reorder task can revisit.
+- **No backend changes.** The backend endpoint from TASK-059 (`PATCH /api/tasks/{taskId}/move`) is the only contract this task needs.
+
+### What was tested
+
+- `cd frontend && npm run build` — exit 0. `tsc -b` clean, vite build clean (415 modules transformed, 0 new TS errors).
+- `cd frontend && npm run lint` — 2 pre-existing `routes.tsx` fast-refresh errors (carry-over from earlier tasks); no new lint errors introduced by this task's files.
+- **Live browser verification was NOT possible in this sandbox** — the dev server cannot be started interactively. Code-reading confirms the wiring: drag end → optimistic override → `PATCH /api/tasks/{taskId}/move` with `{columnId, sortOrder}` → invalidate `['projects', projectId, 'board']` → refetch → override cleared. The user should manually verify by dragging a card, refreshing the page, and confirming it stays in the new column.
+
+### Follow-up risk / notes for TASK-061
+
+- **TASK-061 (optimistic move state)** is now ~10 lines of work: replace the current `onSettled` cleanup with `onSuccess` cleanup only, and add `onError` that (a) deletes the override entry — making the card snap back — and (b) shows a toast (TASK-079 will add the toast plumbing). Or, even simpler: leave `onSettled` cleanup but flip the override entry's value back to the original column on error.
+- **Within-column reorder.** Currently same-column drops are ignored. To enable reordering, the column body needs to expose per-card droppable slots so `over.id` can identify a drop position; sortOrder would then be computed as midpoint between the neighboring tasks' sortOrders. Defer to a later task.
+- **Sort-order bit drift.** With append-at-end, sortOrders grow by 1 on every cross-column move and never compact. At MVP scale this is fine. If a column ever accumulates ~10^15 moves the doubles will lose precision; a periodic rebalance job (or a one-shot rebalance on the next move into the column) would solve it.
+- **In-flight refetch race.** If the board query refetches for an unrelated reason (e.g. another tab created a task) while a move is mid-flight, `applyOverrides` will still display the card in the override column until `onSettled` clears it. This is correct — the optimistic state should survive intermediate refetches. Not a regression from TASK-058.
