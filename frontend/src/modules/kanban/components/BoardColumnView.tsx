@@ -1,5 +1,6 @@
+import { useDroppable } from '@dnd-kit/core';
 import type { BoardColumn } from '../types/board';
-import { TaskCard } from './TaskCard';
+import { DraggableTaskCard } from './DraggableTaskCard';
 
 const columnStyle: React.CSSProperties = {
   display: 'flex',
@@ -53,6 +54,7 @@ const tasksListStyle: React.CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   gap: 'var(--space-2)',
+  minHeight: '40px',
 };
 
 interface BoardColumnViewProps {
@@ -62,26 +64,36 @@ interface BoardColumnViewProps {
 }
 
 export function BoardColumnView({ column, selectedTaskId, onSelectTask }: BoardColumnViewProps) {
+  const { setNodeRef, isOver } = useDroppable({ id: column.id });
+
+  const droppableStyle: React.CSSProperties = {
+    ...tasksListStyle,
+    backgroundColor: isOver ? 'var(--color-accent-soft, rgba(0,0,0,0.04))' : undefined,
+    borderRadius: 'var(--radius-md)',
+    transition: 'background-color 150ms ease',
+  };
+
   return (
     <div style={columnStyle}>
       <div style={headerStyle}>
         <h2 style={columnNameStyle}>{column.name}</h2>
         <span style={countBadgeStyle}>{column.tasks.length}</span>
       </div>
-      {column.tasks.length === 0 ? (
-        <p style={emptyHintStyle}>No tasks</p>
-      ) : (
-        <div style={tasksListStyle}>
-          {column.tasks.map((task) => (
-            <TaskCard
+      <div ref={setNodeRef} style={droppableStyle}>
+        {column.tasks.length === 0 ? (
+          <p style={emptyHintStyle}>No tasks</p>
+        ) : (
+          column.tasks.map((task) => (
+            <DraggableTaskCard
               key={task.id}
               task={task}
+              columnId={column.id}
               isActive={task.id === selectedTaskId}
               onSelect={onSelectTask}
             />
-          ))}
-        </div>
-      )}
+          ))
+        )}
+      </div>
     </div>
   );
 }

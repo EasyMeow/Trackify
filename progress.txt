@@ -1928,3 +1928,49 @@ Follow-up risk / notes for TASK-058 (Kanban DnD):
 - Date order constraint is enforced only client-side via `min`/`max` on the date inputs. The backend does not currently validate that `startDate <= dueDate`. If a user types a date manually (browser support varies) or another client bypasses the inputs, an inverted range can be persisted. Consider a server-side check in TASK-070 (`PATCH /api/tasks/{taskId}/schedule`) since that is the dedicated scheduling endpoint and is the natural home for cross-date validation.
 - Priority `<select>` uses a string union (`TaskPriority`) for the option values. If a future refactor moves to enums or numeric codes, both this drawer and the backend resolver need updating in lockstep. Not a near-term concern.
 - I did NOT route this through `code-reviewer` because the change is small, mechanical, and entirely additive on top of the TASK-056 scaffolding. If a reviewer is preferred for any frontend touch, run it post-hoc — there are no behavior surprises in the diff.
+
+## 2026-04-27 — TASK-058: Add drag-and-drop behavior to the board UI
+
+### What changed (file by file)
+
+**`frontend/src/modules/kanban/components/DraggableTaskCard.tsx`** — NEW FILE
+- Thin wrapper around `TaskCard` using `@dnd-kit/core` `useDraggable`.
+- Sets `opacity: 0.4` on the source card while dragging so the user sees the "ghost" card in the overlay.
+- Spreads `listeners` and `attributes` on the wrapper `<div>`, not on the `<button>` inside `TaskCard`, so the existing click-to-open-drawer path is unaffected.
+- `touchAction: 'none'` required by dnd-kit for pointer events.
+
+**`frontend/src/modules/kanban/components/BoardColumnView.tsx`** — MODIFIED
+- Added `useDroppable({ id: column.id })` from `@dnd-kit/core`.
+- Wrapped the tasks list `<div>` with `ref={setNodeRef}`.
+- Applied a subtle `background-color` change on `isOver` for visual drop target feedback.
+- Changed from rendering `TaskCard` directly to rendering `DraggableTaskCard` with `columnId` prop.
+- Gave the tasks list container `minHeight: 40px` so empty columns remain droppable.
+
+**`frontend/src/pages/ProjectBoardPage.tsx`** — MODIFIED
+- Added `DndContext`, `DragOverlay`, `PointerSensor`, `useSensor`, `useSensors` from `@dnd-kit/core`.
+- `PointerSensor` configured with `activationConstraint: { distance: 8 }` — preserves click-to-open-drawer for short pointer movements.
+- Added `dragOverrides` state (`Map<taskId, columnId>`) to store local-only column moves without touching the TanStack Query cache or calling any backend endpoint.
+- Added `applyOverrides()` pure function: merges server `data.columns` with `dragOverrides` to produce `displayColumns` via `useMemo`. No `useEffect`/`setState` cascade needed.
+- `handleDragStart`: finds the active task in `displayColumns`, stores it in `activeTask` state for the `DragOverlay`.
+- `handleDragEnd`: on cross-column drop, adds `taskId → targetColumnId` to `dragOverrides`. No-op on same-column drop or missed drop. No backend call.
+- `DragOverlay` renders a ghost `TaskCard` at 90% opacity while dragging.
+- When TanStack Query refetches (e.g. after creating a task), `data` reference changes and `applyOverrides` recomputes — any drag overrides whose taskIds exist in a new column after the refetch will be silently reconciled. Full reset happens when `dragOverrides` is cleared (which TASK-060 will do after a successful PATCH).
+
+### Design decisions
+
+- Chose "local overrides map + `useMemo` derivation" over "copy server data into `useState` + `useEffect` sync" to avoid the `react-hooks/set-state-in-effect` lint rule and cascading renders.
+- Chose snap-back approach on missed drop (card falls back to original column), and local-move approach on successful drop (card stays in target column locally until refetch). This matches acceptance criteria option (a) + (b) hybrid.
+- `DragOverlay` card width is fixed at 260px to match column `minWidth`.
+- Did not use `@dnd-kit/sortable` — the task does not require within-column reordering (TASK-060/061 will decide the API shape first).
+
+### What was tested
+
+- `npm run build` passes (tsc + vite, 0 new errors).
+- `npm run lint` passes with only the 2 pre-existing `routes.tsx` fast-refresh warnings.
+- **Live browser verification was NOT possible in this sandbox environment** — the dev server cannot be started interactively. Code-reading and TypeScript type-checking confirm correct wiring.
+
+### Follow-up risk for TASK-059 and TASK-060
+
+- TASK-059 adds `PATCH /api/tasks/{taskId}/move`. Once available, TASK-060 must wire `handleDragEnd` to call the mutation and, on success, clear the relevant entry from `dragOverrides` (or invalidate the board query, which will refetch clean data and drop the override).
+- Current `dragOverrides` state is module-scoped to `ProjectBoardPage`. TASK-061 (optimistic rollback) can keep it here or promote to a narrow Zustand store if multiple components need read access to "pending moves".
+- If a refetch arrives while a drag is in flight, `applyOverrides` will recompute synchronously on the next render, which could teleport the card. This is acceptable at this stage; TASK-061 will handle proper rollback with the mutation's `onError` callback.
