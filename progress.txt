@@ -2413,3 +2413,51 @@ Modified:
 
 - **No error UI.** The hook's `error` state is silently swallowed. If `/api/projects/{id}/timeline` 403s or 500s, the page just stays on "Loading…" → "0 task(s)" forever. Acceptable for now because the task scope is "import the hook"; TASK-078 will add proper loading/empty/error states across all core screens.
 - **Re-export of `TaskStatus`/`TaskPriority` couples gantt to kanban.** If kanban's enum values ever diverge from what timeline returns (unlikely — backend uses one `Task.status` field), this re-export becomes a lie. Acceptable because both views are over the same `Task` entity per architecture.md §10. If a future refactor splits the enums per view, this re-export should be replaced with a dedicated copy.
+
+## 2026-04-27 — TASK-069: Render a read-only Gantt view
+
+### Files added
+
+- `frontend/src/modules/gantt/utils/mapTimelineToGantt.ts` — pure mapper from `TimelineTask[]` → `{ ganttTasks: GanttTask[], datelessCount: number }`. Filters out tasks where `startDate` or `dueDate` is null (gantt-task-react requires both). Nudges `end` forward by one day when `end <= start` rather than dropping the task — avoids silent data loss for milestones entered as same-day. Sets `isDisabled: true` on every mapped task so the library's built-in drag/resize handles are inert (TASK-070/071 will lift this flag and wire `onDateChange`).
+
+### Files modified
+
+- `frontend/src/pages/ProjectTimelinePage.tsx` — replaced the placeholder count line with a real `<Gantt>` render. Branches on `isLoading`, `error`, empty (`data.tasks.length === 0`), and "all tasks dateless" (`ganttTasks.length === 0`) before reaching the chart. When dateless tasks coexist with renderable ones, surfaces a muted "N tasks not shown — no start or due date set." line below the chart so the user notices the gap. Imports `gantt-task-react/dist/index.css` at the page so the dependency stays co-located with the feature.
+
+### Key design decisions
+
+- **`ViewMode.Week` as default.** Wide enough to see multi-day bars without the noise of `Day` mode but tight enough to navigate a typical sprint. No view-mode switcher yet — that's a polish concern, not in TASK-069 scope.
+- **`isDisabled: true` on every task.** `gantt-task-react` shows drag handles by default and `onDateChange` is the only way to intercept a drag. Disabling the task wholesale is the cleanest way to keep the view truly read-only without monkey-patching the library. TASK-070 will need to remove this flag and provide an `onDateChange` callback that calls the schedule mutation.
+- **Mapper extracted into `utils/`.** Keeps `ProjectTimelinePage.tsx` declarative and makes the date-handling logic unit-testable without rendering the chart. Mirrors how `kanban/utils/` would house pure helpers (none yet, but the pattern is now precedent for the gantt module).
+- **CSS imported at the page, not the app root.** Spec scope said "stay inside the task boundary." Importing at `ProjectTimelinePage.tsx` keeps the gantt-task-react dependency colocated with the only consumer; no global side effects on routes that never visit the timeline.
+- **Inline color values for `barBackgroundColor` / `todayColor`.** `gantt-task-react` props land in inline SVG `style`, so `var(--color-accent-soft)` resolves at render time. `todayColor` needs alpha-blending against the chart background; the design tokens don't expose `--color-accent` with alpha, so the literal `rgba(74, 139, 111, 0.12)` (RGB equivalent of `#4a8b6f`) is used for the today-marker only. If `tokens.css` ever adds an alpha-aware accent, replace this literal.
+- **Filter, not drop.** Tasks without dates aren't silently swallowed — the count is preserved in `MappedTimeline.datelessCount` and surfaced below the chart. Better UX than the alternatives (defaulting to today/+1d would lie about the schedule; rendering a zero-width bar would look broken).
+
+### What was tested
+
+- `cd frontend && npm run build` — 425 modules transformed, exit 0. Bundle: 456.88 kB / 140.92 kB gzip (up from 419.76 kB pre-task — the gantt-task-react import is the new weight).
+- `cd frontend && npm run lint` — 2 pre-existing `react-refresh/only-export-components` errors in `src/app/routes.tsx`. **Zero new errors introduced.**
+- Manual browser verification: skipped at implementation time (no backend running). The acceptance test step is "tasks with dates show visible bars on the timeline" — should be re-run by next iteration once the backend is up. The data path (hook → mapper → Gantt) is fully wired and type-checked, so the risk is visual/styling regression only, not logic.
+
+### Follow-up notes for TASK-070 (PATCH /api/tasks/{taskId}/schedule)
+
+- Endpoint should accept `{ startDate, dueDate }` patch (both optional/nullable). Timeline UI passes both whenever a bar is dragged or resized.
+- Returning the updated task DTO is convenient — TanStack Query can use the response to update the timeline cache directly without a refetch round-trip. Mirror what `PATCH /api/tasks/{id}` returns.
+- Authorization: same pattern as other task mutations (project membership via `ProjectQueryService.getById` then load the task).
+
+### Follow-up notes for TASK-071 (Wire Gantt bar drag/resize to schedule updates)
+
+- Remove `isDisabled: true` from `mapTimelineToGantt` — that's the single switch that turns the read-only view into editable.
+- Add an `onDateChange={(task) => mutation.mutate(...)}` to `<Gantt>`. The library calls this for both drag and resize.
+- The mutation must invalidate `['projects', projectId, 'timeline']` and likely also `['projects', projectId, 'board']` (in case the board card surfaces dates).
+- Watch the same `end <= start` edge case in the mutation: if a drag produces an inverted range, either reject client-side (return `false` from `onDateChange` to undo) or apply the same one-day nudge before sending. The mapper's nudge only protects render; the mutation needs its own guard.
+
+### Follow-up notes for TASK-074 (Render dependency lines in the Gantt view)
+
+- `gantt-task-react`'s `Task` interface has a `dependencies: string[]` field — the library already draws arrow lines between tasks that reference each other by id. Once the timeline payload includes dependency edges (TASK-073), the mapper just needs to look up successors per task and populate `dependencies` on the predecessor's mapped task. No additional component code required.
+
+### Follow-up risks
+
+- **Bundle size jump.** The gantt-task-react import added ~37 kB to the gzipped bundle (140.92 kB vs 129.51 kB pre-task). Acceptable for an MVP; if it becomes a concern, the timeline page can be lazy-loaded via `React.lazy` so the chunk only loads when a user visits a project's timeline route.
+- **`new Date('YYYY-MM-DD')` parses as UTC midnight.** `date-fns/parseISO` would be more explicit, but `new Date(dateString)` is fine here since the strings are date-only and consistently parsed across the app. If a future task introduces local-time-sensitive scheduling (e.g. timezone-aware due times), the mapper should switch to `parseISO` to avoid off-by-one rendering near midnight in negative-UTC timezones.
+- **Library quirks not fully exercised.** `gantt-task-react` is known for sharp edges around empty arrays, single-task views, and same-day start/end (the last is why the mapper has the nudge). The build passes type-check, but real visual confirmation against a populated project board with edge-case data is still pending.
