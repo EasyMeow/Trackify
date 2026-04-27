@@ -1583,3 +1583,34 @@ Follow-up risk / notes:
 - Estimated hours uses NUMERIC(6,2): max 9999.99 hours per task. Exceeding that
   is unrealistic for MVP; if it ever matters, widen the precision in a future
   migration.
+
+## 2026-04-27 — TASK-047: Implement GET /api/projects/{projectId}/board
+
+Files added:
+- `backend/src/main/java/com/trackify/board/dto/BoardTaskCardResponse.java` — record with id, title, status, priority, sortOrder, startDate (nullable), dueDate (nullable).
+- `backend/src/main/java/com/trackify/board/dto/BoardColumnResponse.java` — record with id, name, position, tasks list.
+- `backend/src/main/java/com/trackify/board/dto/BoardResponse.java` — top-level record with projectId and ordered columns list.
+- `backend/src/main/java/com/trackify/board/application/BoardQueryService.java` — @Transactional(readOnly=true) service that delegates auth to ProjectQueryService.getById, loads columns via BoardColumnRepository.findByProjectIdOrderByPositionAsc, loads tasks via TaskRepository.findByProjectIdOrderByColumnIdAscSortOrderAsc, groups tasks by columnId, maps to DTOs.
+- `backend/src/main/java/com/trackify/board/controller/BoardController.java` — thin @RestController mapped to GET /api/projects/{projectId}/board; delegates entirely to BoardQueryService.
+- `backend/src/test/java/com/trackify/board/controller/BoardControllerTest.java` — @WebMvcTest with 5 test cases (happy path with 3 columns + 3 tasks, empty project, 403 forbidden, 404 not found, 401 unauthenticated).
+
+Key design decisions:
+- Authorization delegates entirely to ProjectQueryService.getById(projectId, userId) — the same check backing GET /api/projects/{projectId}. No new auth logic; reuses existing workspace-membership check and 404/403 error semantics.
+- BoardQueryService is in board.application per module layering (architecture.md §7.1). It calls into task.infrastructure.TaskRepository directly (read-only cross-module repository access) rather than via a task application service, because there is no task read service yet and board is a read model. If a TaskQueryService is added in a future task, BoardQueryService should delegate to it instead.
+- Tasks are grouped under columns using a Map<UUID, List<Task>>; order within each column is preserved from the repository query which orders by (column_id asc, sort_order asc).
+- Controller is mapped to /api/projects/{projectId}/board. This sits under /api/projects/ (same prefix as ProjectByIdController) without conflict because the path segment /board is distinct.
+- DTOs use Java records; LocalDate fields are nullable (null serializes to JSON null) matching the optional start/due fields on Task.
+
+What was tested:
+- `./mvnw -f backend compile test-compile` -> BUILD SUCCESS.
+- `./mvnw -f backend test` -> BUILD SUCCESS, 47 tests pass (was 42, +5 new tests in BoardControllerTest).
+- Happy-path test: 3 columns in position order, tasks within first column in sortOrder order, all card fields asserted (id, title, status, priority, sortOrder, startDate, dueDate).
+- Empty-project test: 3 columns each returning tasks:[].
+- Forbidden test: ForbiddenException -> HTTP 403 with standard error envelope.
+- Not-found test: NotFoundException -> HTTP 404 with standard error envelope.
+- Unauthenticated test: Spring Security 401 before controller is invoked, no service interaction.
+
+Follow-up risk / notes:
+- BoardQueryService reads TaskRepository directly (cross-module repository access). This is acceptable for MVP (board is a read model) but should be encapsulated behind a TaskQueryService if task's read surface grows (TASK-067 timeline read may be the natural moment to introduce it).
+- No pagination. If a project accumulates hundreds of tasks in a column, the endpoint returns them all. Add cursor-based pagination in a future task if needed.
+- TASK-048 (frontend board query layer) depends on this endpoint being live.
