@@ -140,7 +140,12 @@ export default function ProjectBoardPage() {
   const [dragOverrides, setDragOverrides] = useState<DragOverrides>(new Map());
   const [activeTask, setActiveTask] = useState<BoardTaskCard | null>(null);
 
-  // Derive display columns from server data + local overrides
+  // Derive display columns from server data + local overrides.
+  // An override is naturally a no-op once server data agrees with it
+  // (see `applyOverrides`), so successful moves settle without flicker even
+  // though the override stays in the map. Stale entries get overwritten the
+  // next time the same card is moved, and `onError` deletes the entry to roll
+  // the card back to its server position when a move fails.
   const displayColumns = useMemo<BoardColumn[]>(
     () => (data ? applyOverrides(data.columns, dragOverrides) : []),
     [data, dragOverrides]
@@ -202,10 +207,8 @@ export default function ProjectBoardPage() {
     moveTask.mutate(
       { taskId: draggedTaskId, columnId: targetColumnId, sortOrder },
       {
-        onSettled: () => {
-          // Drop the local override either way: on success the refetched board
-          // already shows the card in the new column, on error TASK-061 will
-          // add proper rollback — for now snapping back to server truth is fine.
+        onError: () => {
+          // Rollback: drop the override so the card snaps back to its server position.
           setDragOverrides((prev) => {
             if (!prev.has(draggedTaskId)) return prev;
             const next = new Map(prev);

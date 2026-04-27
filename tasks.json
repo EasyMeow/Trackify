@@ -1171,7 +1171,7 @@
       "dependencies": [
         "TASK-060"
       ],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-062",

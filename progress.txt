@@ -2086,3 +2086,39 @@ Follow-up risk / notes for TASK-058 (Kanban DnD):
 - **Within-column reorder.** Currently same-column drops are ignored. To enable reordering, the column body needs to expose per-card droppable slots so `over.id` can identify a drop position; sortOrder would then be computed as midpoint between the neighboring tasks' sortOrders. Defer to a later task.
 - **Sort-order bit drift.** With append-at-end, sortOrders grow by 1 on every cross-column move and never compact. At MVP scale this is fine. If a column ever accumulates ~10^15 moves the doubles will lose precision; a periodic rebalance job (or a one-shot rebalance on the next move into the column) would solve it.
 - **In-flight refetch race.** If the board query refetches for an unrelated reason (e.g. another tab created a task) while a move is mid-flight, `applyOverrides` will still display the card in the override column until `onSettled` clears it. This is correct — the optimistic state should survive intermediate refetches. Not a regression from TASK-058.
+
+## 2026-04-27 — TASK-061: Add optimistic move state
+
+### What changed (file by file)
+
+**`frontend/src/pages/ProjectBoardPage.tsx`** — MODIFIED
+- Replaced the move mutation's `onSettled` callback with an `onError`-only rollback. The optimistic `dragOverrides` entry now stays in place on success and is deleted only when the server rejects the move. On error the card visibly snaps back to its server position because `applyOverrides` becomes a no-op for that taskId, so the freshly-rendered board reflects unchanged server state.
+- Updated the comment near `displayColumns` to spell out the new lifetime of an override entry: set on drop (optimistic), removed on error (rollback), naturally inert on success once the refetched server data agrees with the override target column.
+
+### Design decisions
+
+- **`onError`-only rollback, no `onSuccess` cleanup.** Earlier (TASK-060) the cleanup ran on both branches via `onSettled`, which had a small but real flicker risk: if `onSettled` cleared the override before the invalidation's refetch landed, the card would briefly snap back to the old column and then jump to the new column once new data arrived. Keeping the override on success removes that flicker entirely — once the refetch lands, the override and the server agree, so `applyOverrides` shows the new column either way.
+- **Don't prune stale overrides via `useEffect`.** First implementation tried a `useEffect` that reads `data` and prunes overrides whose target column matched server state. ESLint's `react-hooks/set-state-in-effect` flagged it as cascading-render risk (legitimate — `setDragOverrides` inside an effect depending on `data` triggers an extra render after every server refetch). Workarounds (lint disable, signal patterns) all felt heavier than the benefit. The simpler conclusion: the override map only grows on user drops (bounded by interactions, not renders), and a stale entry is a no-op as long as server agrees, OR it gets overwritten the next time the same card is moved. At MVP scale (~tens of drops per session, page lifetime bounded by navigation) the unbounded growth is irrelevant.
+- **Optimistic state lives in component state, not in TanStack cache.** Considered patching `setQueryData` to mutate the board cache directly so we'd inherit TanStack Query's built-in `onMutate`/`onError` rollback pattern. Rejected because the board cache shape is a tree of columns containing tasks, and an optimistic move would require splicing the task out of one column array and into another — substantially more code than the existing `dragOverrides` Map. The Map keeps "the optimistic delta" and "server truth" cleanly separated and matches the pattern already established in TASK-058.
+- **No toast on error yet.** TASK-079 introduces the toast plumbing. For now, the rollback is silent — the card snapping back is itself the user-visible signal. Adding a toast here would couple TASK-061 to a toast system that doesn't exist yet.
+- **No retry / backoff.** A failed move is a hard failure: the card snaps back, the user can re-attempt by dragging again. Auto-retry on transient errors would mask intermittent backend issues during dev. TanStack Query mutations don't retry by default; this matches.
+
+### What was tested
+
+- `cd frontend && npm run build` — exit 0. `tsc -b` clean, vite build clean (415 modules transformed, 0 new TS errors). Bundle size unchanged (413.40 kB minified, 128.04 kB gzipped — actually slightly smaller after removing the effect).
+- `cd frontend && npm run lint` — 2 pre-existing `routes.tsx` fast-refresh errors carried over from earlier tasks; **no new errors introduced**. The `react-hooks/set-state-in-effect` warning that briefly appeared during my first attempt is gone after dropping the `useEffect`-based pruning.
+- **Live browser verification was NOT possible in this sandbox** — the Vite dev server cannot be started interactively. I traced the rollback logic by hand:
+  1. Drop card T from column A → column B.
+  2. `handleDragEnd` synchronously sets `dragOverrides.set(T, B)` → `applyOverrides` re-parents T from A to B in the displayed columns. Card visibly moves to B.
+  3. `moveTask.mutate(...)` fires. Mock a failure response (e.g., disconnect network in DevTools or send the test against a stopped backend).
+  4. `onError` fires → `setDragOverrides` deletes the T entry → `applyOverrides` returns the server columns unchanged → T appears back in A.
+- Did not add an automated frontend test. The kanban module has no Jest/RTL setup and the task's `test_steps` calls for a manual verification ("simulate a failed move request"). Adding a test infra just for this would be scope creep beyond TASK-061.
+- Backend: untouched. No `./mvnw` runs needed.
+
+### Follow-up risk / notes
+
+- **Manual verification owed by the user.** The simplest reproducer: open DevTools → Network tab → set "Offline" → drag a card to another column. Card should optimistically appear in the new column, then snap back once the offline error returns. Re-enable network → drag again → card stays in the new column after refresh.
+- **Map growth bound.** `dragOverrides` grows by 1 per cross-column drop in the lifetime of a `ProjectBoardPage` mount. Practically capped at a few dozen entries per session; cleared on navigate-away. If profiling ever shows the Map growing into the thousands (it won't at MVP scale), reintroduce pruning either inside `applyOverrides` (return both pruned columns AND a smaller override map) or via a controlled cleanup hook.
+- **Dual-move edge case.** If the user drops the same card twice in quick succession (A→B, then B→C before the first mutation settles), the second drop overwrites the override entry with `{T:C}`. If the first mutation then fails, `onError` deletes the override entirely → the card snaps to its server position (A), even though the user's *final intent* was C. This is a rare race and the simplest correct behavior is to surface a toast to the user once TASK-079 lands, so they can re-drag if needed. Not worth solving inside TASK-061.
+- **External moves (multi-tab, future real-time collab).** A stale override could re-apply if external state moves the card while the override is still in the Map. Out of scope for MVP (single-user, no real-time sync). If real-time arrives later, reintroduce a query-cache-driven prune so the override never outlives its relevance.
+- **TASK-079 (toast on failed mutations)** is the natural next step on this code path — extend the existing `onError` to also call the toast helper. Code change estimate: 2 lines in `ProjectBoardPage` once `useToast` (or whatever the toast API ends up named) is wired.
