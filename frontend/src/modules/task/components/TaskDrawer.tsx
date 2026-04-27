@@ -1,9 +1,12 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { format, parseISO } from 'date-fns';
 import { useTaskDetail } from '../hooks/useTaskDetail';
+import { useUpdateTask } from '../hooks/useUpdateTask';
+import type { TaskResponse } from '../../kanban/types/task';
 
 interface TaskDrawerProps {
   taskId: string | null;
+  projectId: string;
   onClose: () => void;
 }
 
@@ -15,6 +18,8 @@ function fmtDate(iso: string | null): string {
     return iso;
   }
 }
+
+// ---------- styles ----------
 
 const backdropStyle: React.CSSProperties = {
   position: 'fixed',
@@ -45,14 +50,6 @@ const headerStyle: React.CSSProperties = {
   gap: 'var(--space-3)',
   padding: 'var(--space-5) var(--space-5) var(--space-3)',
   borderBottom: '1px solid var(--color-border)',
-};
-
-const titleStyle: React.CSSProperties = {
-  margin: 0,
-  fontSize: 'var(--font-size-xl)',
-  fontWeight: 'var(--font-weight-semibold)',
-  color: 'var(--color-text)',
-  lineHeight: 'var(--line-height-snug)',
 };
 
 const closeBtnStyle: React.CSSProperties = {
@@ -144,13 +141,227 @@ const priorityBadgeStyle = (priority: string): React.CSSProperties => ({
   ...(priority === 'HIGH' ? { backgroundColor: 'var(--color-warning-soft)', color: 'var(--color-warning)' } : {}),
 });
 
-export function TaskDrawer({ taskId, onClose }: TaskDrawerProps) {
+const editInputBaseStyle: React.CSSProperties = {
+  width: '100%',
+  boxSizing: 'border-box',
+  padding: 'var(--space-1) var(--space-2)',
+  fontSize: 'var(--font-size-xl)',
+  fontWeight: 'var(--font-weight-semibold)',
+  color: 'var(--color-text)',
+  backgroundColor: 'var(--color-bg)',
+  border: '1px solid var(--color-border)',
+  borderRadius: 'var(--radius-md)',
+  outline: 'none',
+  lineHeight: 'var(--line-height-snug)',
+  fontFamily: 'inherit',
+};
+
+const editInputErrorStyle: React.CSSProperties = {
+  ...editInputBaseStyle,
+  borderColor: 'var(--color-danger)',
+};
+
+const editTextareaStyle: React.CSSProperties = {
+  width: '100%',
+  boxSizing: 'border-box',
+  padding: 'var(--space-2)',
+  fontSize: 'var(--font-size-sm)',
+  color: 'var(--color-text)',
+  backgroundColor: 'var(--color-bg)',
+  border: '1px solid var(--color-border)',
+  borderRadius: 'var(--radius-md)',
+  outline: 'none',
+  fontFamily: 'inherit',
+  resize: 'vertical',
+  minHeight: '80px',
+  lineHeight: 'var(--line-height-normal)',
+};
+
+const inlineErrorStyle: React.CSSProperties = {
+  fontSize: 'var(--font-size-xs)',
+  color: 'var(--color-danger)',
+  marginTop: 'var(--space-1)',
+};
+
+// ---------- inner content (keyed by task id so useState initializers reset on new task) ----------
+
+interface DrawerContentProps {
+  data: TaskResponse;
+  taskId: string;
+  projectId: string;
+  onClose: () => void;
+  // parent passes a setter so the outer Escape handler can cancel an in-progress edit
+  registerCancelEdit: (fn: (() => void) | null) => void;
+}
+
+function DrawerContent({ data, taskId, projectId, onClose, registerCancelEdit }: DrawerContentProps) {
+  const { mutate: updateTask, isPending } = useUpdateTask(taskId, projectId);
+
+  // draft values — only used while the field is focused; start from current server value
+  const [titleDraft, setTitleDraft] = useState(data.title);
+  const [titleError, setTitleError] = useState('');
+  const [descDraft, setDescDraft] = useState(data.description ?? '');
+
+  // which field (if any) is currently focused
+  const [editingField, setEditingField] = useState<'title' | 'description' | null>(null);
+
+  // Keep the outer shell's cancel-edit reference up to date.
+  // We only register a cancel function while the user is actively editing.
+  useEffect(() => {
+    if (editingField === null) {
+      registerCancelEdit(null);
+      return;
+    }
+    registerCancelEdit(() => {
+      if (editingField === 'title') {
+        setTitleDraft(data.title);
+        setTitleError('');
+      }
+      if (editingField === 'description') {
+        setDescDraft(data.description ?? '');
+      }
+      setEditingField(null);
+      (document.activeElement as HTMLElement | null)?.blur();
+    });
+  }, [editingField, data, registerCancelEdit]);
+
+  // Note: no separate data-sync effect is needed. After a successful save the
+  // mutation echoes the submitted value back into the TanStack Query cache, and
+  // the user has already blurred (editingField === null) before the response
+  // arrives, so the draft already matches the server value.
+  // The `key={data.id}` on DrawerContent ensures fresh state when a new task
+  // is opened.
+
+  const titleId = 'task-drawer-title';
+
+  function commitTitle() {
+    setEditingField(null);
+    const trimmed = titleDraft.trim();
+    if (!trimmed) {
+      setTitleError('Title cannot be blank.');
+      setTitleDraft(data.title);
+      return;
+    }
+    if (trimmed === data.title) return;
+    setTitleError('');
+    updateTask({ title: trimmed });
+  }
+
+  function commitDescription() {
+    setEditingField(null);
+    const current = data.description ?? '';
+    if (descDraft === current) return;
+    // Backend treats null as "keep unchanged" and empty string as "clear" (TASK-055).
+    // Send the draft string directly so a cleared textarea actually persists.
+    updateTask({ description: descDraft });
+  }
+
+  return (
+    <>
+      <div style={headerStyle}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <input
+            id={titleId}
+            type="text"
+            value={titleDraft}
+            disabled={isPending}
+            style={titleError ? editInputErrorStyle : editInputBaseStyle}
+            maxLength={255}
+            aria-label="Task title"
+            onFocus={() => setEditingField('title')}
+            onChange={(e) => {
+              setTitleDraft(e.target.value);
+              if (titleError && e.target.value.trim()) setTitleError('');
+            }}
+            onBlur={commitTitle}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                e.currentTarget.blur();
+              }
+              // Escape is handled by the document-level listener in the outer shell
+            }}
+          />
+          {titleError && <p style={inlineErrorStyle}>{titleError}</p>}
+        </div>
+        <button type="button" style={closeBtnStyle} onClick={onClose} aria-label="Close task drawer">
+          ✕
+        </button>
+      </div>
+
+      <div style={bodyStyle}>
+        <div style={fieldStyle}>
+          <span style={labelStyle}>Description</span>
+          <textarea
+            value={descDraft}
+            disabled={isPending}
+            style={editTextareaStyle}
+            placeholder="No description"
+            aria-label="Task description"
+            onFocus={() => setEditingField('description')}
+            onChange={(e) => setDescDraft(e.target.value)}
+            onBlur={commitDescription}
+            // Shift+Enter inserts newline (default textarea behavior).
+            // Plain Enter also inserts newline — no submit on Enter for multi-line fields.
+            // Escape is handled by the document-level listener.
+          />
+          {isPending && (
+            <p style={{ ...mutedValueStyle, marginTop: 'var(--space-1)' }}>Saving…</p>
+          )}
+        </div>
+
+        <div style={metaRowStyle}>
+          <div style={fieldStyle}>
+            <span style={labelStyle}>Status</span>
+            <span style={statusBadgeStyle(data.status)}>{data.status.replace('_', ' ')}</span>
+          </div>
+          <div style={fieldStyle}>
+            <span style={labelStyle}>Priority</span>
+            <span style={priorityBadgeStyle(data.priority)}>{data.priority}</span>
+          </div>
+        </div>
+
+        <div style={metaRowStyle}>
+          <div style={fieldStyle}>
+            <span style={labelStyle}>Start date</span>
+            <p style={valueStyle}>{fmtDate(data.startDate)}</p>
+          </div>
+          <div style={fieldStyle}>
+            <span style={labelStyle}>Due date</span>
+            <p style={valueStyle}>{fmtDate(data.dueDate)}</p>
+          </div>
+        </div>
+      </div>
+
+      <div style={footerStyle}>
+        <span>Created: {fmtDate(data.createdAt)}</span>
+        <span>Updated: {fmtDate(data.updatedAt)}</span>
+      </div>
+    </>
+  );
+}
+
+// ---------- outer shell ----------
+
+export function TaskDrawer({ taskId, projectId, onClose }: TaskDrawerProps) {
   const { data, isLoading, isError } = useTaskDetail(taskId);
+
+  // cancelEditRef holds a function that DrawerContent registers when a field is focused.
+  // The Escape handler calls it to cancel the edit instead of closing the drawer.
+  const cancelEditRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     if (!taskId) return;
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        if (cancelEditRef.current) {
+          cancelEditRef.current();
+          cancelEditRef.current = null;
+          e.stopPropagation();
+        } else {
+          onClose();
+        }
+      }
     }
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
@@ -169,62 +380,27 @@ export function TaskDrawer({ taskId, onClose }: TaskDrawerProps) {
         aria-labelledby={titleId}
         style={panelStyle}
       >
-        <div style={headerStyle}>
-          {isLoading || isError || !data ? (
+        {(isLoading || isError || !data) ? (
+          <div style={headerStyle}>
             <p
               id={titleId}
               style={isError ? { ...valueStyle, color: 'var(--color-danger)', margin: 0 } : mutedValueStyle}
             >
               {isLoading ? 'Loading task…' : 'Couldn\'t load task.'}
             </p>
-          ) : (
-            <h2 id={titleId} style={titleStyle}>{data.title}</h2>
-          )}
-          <button type="button" style={closeBtnStyle} onClick={onClose} aria-label="Close task drawer">
-            ✕
-          </button>
-        </div>
-
-        {data && (
-          <div style={bodyStyle}>
-            <div style={fieldStyle}>
-              <span style={labelStyle}>Description</span>
-              {data.description ? (
-                <p style={valueStyle}>{data.description}</p>
-              ) : (
-                <p style={mutedValueStyle}>No description</p>
-              )}
-            </div>
-
-            <div style={metaRowStyle}>
-              <div style={fieldStyle}>
-                <span style={labelStyle}>Status</span>
-                <span style={statusBadgeStyle(data.status)}>{data.status.replace('_', ' ')}</span>
-              </div>
-              <div style={fieldStyle}>
-                <span style={labelStyle}>Priority</span>
-                <span style={priorityBadgeStyle(data.priority)}>{data.priority}</span>
-              </div>
-            </div>
-
-            <div style={metaRowStyle}>
-              <div style={fieldStyle}>
-                <span style={labelStyle}>Start date</span>
-                <p style={valueStyle}>{fmtDate(data.startDate)}</p>
-              </div>
-              <div style={fieldStyle}>
-                <span style={labelStyle}>Due date</span>
-                <p style={valueStyle}>{fmtDate(data.dueDate)}</p>
-              </div>
-            </div>
+            <button type="button" style={closeBtnStyle} onClick={onClose} aria-label="Close task drawer">
+              ✕
+            </button>
           </div>
-        )}
-
-        {data && (
-          <div style={footerStyle}>
-            <span>Created: {fmtDate(data.createdAt)}</span>
-            <span>Updated: {fmtDate(data.updatedAt)}</span>
-          </div>
+        ) : (
+          <DrawerContent
+            key={data.id}
+            data={data}
+            taskId={taskId}
+            projectId={projectId}
+            onClose={onClose}
+            registerCancelEdit={(fn) => { cancelEditRef.current = fn; }}
+          />
         )}
       </div>
     </>

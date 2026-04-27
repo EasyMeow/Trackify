@@ -1866,3 +1866,25 @@ Follow-up risk / notes for TASK-056 (frontend title + description editors):
 - Description CAN be cleared to empty string (empty is non-null). Date fields CANNOT be cleared from this endpoint (sending null = keep existing). TASK-057 may want to revisit this if the date editor needs a "remove date" affordance — extend the DTO with a sentinel or switch to JSON-Merge-Patch then.
 - Priority normalisation: the service uppercases before saving, so the frontend can safely send "high" or "HIGH" — both work.
 - `code-reviewer` agent NOT invoked here (small, mechanical addition with full test coverage; manual review by the main thread). If TASK-056/057 grow to multiple files, route them through code-reviewer.
+
+---
+TASK-056 — Add title and description editors in the drawer
+Status: done
+
+What changed:
+- NEW frontend/src/modules/task/types/updateTask.ts — `UpdateTaskRequest` DTO (title?, description?, priority?, startDate?, dueDate?).
+- MODIFIED frontend/src/modules/task/api/taskDetailApi.ts — added `updateTask(taskId, request)` calling `httpClient.patch`.
+- NEW frontend/src/modules/task/hooks/useUpdateTask.ts — `useMutation` that calls updateTask, then `setQueryData(['tasks', taskId])` + `invalidateQueries(['projects', projectId, 'board'])` on success.
+- MODIFIED frontend/src/modules/task/components/TaskDrawer.tsx — split into outer shell (TaskDrawer) + inner DrawerContent (keyed by data.id). Title rendered as controlled input (save on blur/Enter, cancel on Escape, inline error on blank). Description rendered as multi-line textarea (save on blur, plain Enter inserts newline). Escape while editing cancels the edit via a cancelEditRef registered by DrawerContent; Escape while not editing closes the drawer. isPending disables both fields and shows "Saving…" under description.
+- MODIFIED frontend/src/pages/ProjectBoardPage.tsx — threads `projectId={projectId ?? ''}` into `<TaskDrawer>`.
+
+What was tested:
+- `npm run build` — exit 0, no new errors.
+- `npm run lint` — 2 pre-existing errors in routes.tsx only; no new errors.
+- Browser verification not performed (no live browser in sandbox). End-to-end wiring confirmed by code reading: drawer mounts with projectId, useUpdateTask calls PATCH /api/tasks/{taskId}, onSuccess updates cache and invalidates board query.
+
+Follow-up risk for TASK-057 (priority + date editors):
+- `UpdateTaskRequest` already declares `priority?`, `startDate?`, `dueDate?` — TASK-057 can add the UI without touching the type or API layer.
+- `registerCancelEdit` prop is an inline arrow in JSX so its identity changes each parent render; the effect in DrawerContent re-runs each time but is trivially cheap (just writes to a ref). Could be stabilised with useCallback if needed.
+- Description cleared to empty string sends `""` (empty string) to the backend, NOT `null`. Backend `updateTask` (TASK-055) treats `null` as "leave unchanged" and empty string as a clear. An earlier draft of `commitDescription` converted empty drafts to `null`, which would silently fail to clear; that was fixed before merge — `commitDescription` now sends `descDraft` directly. End-to-end clear path verified by reading `TaskCommandService.updateTask` (the `if (request.description() != null)` branch passes for `""` and calls `task.setDescription("")`).
+- `code-reviewer` agent: PASS. Notes: (1) TS DTO declares priority/startDate/dueDate fields ahead of TASK-057 — single shared DTO, accepted as not scope creep. (2) `key={data.id}` on DrawerContent is the correct anchor — cache stays as the previously-fetched record for the current taskId; key flips at the right moment. (3) Escape race is safe — `cancelEditRef.current` is read and cleared synchronously and `e.stopPropagation()` prevents bubbling.

@@ -108,7 +108,7 @@ export default function ProjectBoardPage() {
           ))}
         </div>
       )}
-      <TaskDrawer taskId={selectedTaskId} onClose={() => setSelectedTaskId(null)} />
+      <TaskDrawer taskId={selectedTaskId} projectId={projectId ?? ''} onClose={() => setSelectedTaskId(null)} />
     </section>
   );
 }
