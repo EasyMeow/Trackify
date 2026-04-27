@@ -2161,3 +2161,38 @@ Follow-up risk / notes for TASK-058 (Kanban DnD):
 
 - The drawer currently renders no comment section. TASK-064 will wire the `GET /api/tasks/{taskId}/comments` endpoint and render a threaded list + compose box.
 - Date display: `createdAt` is TIMESTAMPTZ/Instant on the backend. The frontend should format it with `date-fns` as a relative label ("2 minutes ago") for recent comments, ISO date for older ones.
+
+## 2026-04-27 — TASK-063: Implement task comment endpoints
+
+### Files changed
+
+New production files:
+- `backend/src/main/java/com/trackify/comment/dto/CommentResponse.java` — record DTO: id, taskId, authorId (nullable), authorName (nullable), body, createdAt, updatedAt.
+- `backend/src/main/java/com/trackify/comment/dto/CommentCreateRequest.java` — record DTO: body (@NotBlank, @Size max 10000).
+- `backend/src/main/java/com/trackify/comment/dto/package-info.java`
+- `backend/src/main/java/com/trackify/comment/application/CommentService.java` — listComments + createComment; @Transactional on write, readOnly on read; batch-resolves author display names with one findAllById call (no N+1); delegates auth to TaskRepository + ProjectQueryService following the same pattern as TaskQueryService.
+- `backend/src/main/java/com/trackify/comment/application/package-info.java`
+- `backend/src/main/java/com/trackify/comment/controller/CommentController.java` — GET /api/tasks/{taskId}/comments (200) and POST /api/tasks/{taskId}/comments (201); thin; @AuthenticationPrincipal LocalUserPrincipal; @Valid on POST body.
+- `backend/src/main/java/com/trackify/comment/controller/package-info.java`
+
+New test file:
+- `backend/src/test/java/com/trackify/comment/controller/CommentControllerTest.java` — 10 @WebMvcTest cases covering: list happy path, list empty, list 403, list 404, list 401, create happy path, create blank body 400, create 403, create 404, create 401.
+
+### Key design decisions
+
+- Authorization via TaskRepository.findById → ProjectQueryService.getById, identical to TaskQueryService. No new auth path invented.
+- Author names batched: collect distinct author IDs from comment list → userRepository.findAllById → Map<UUID,String>. One extra query per list call; acceptable for MVP comment threads.
+- authorId/authorName are nullable in CommentResponse to handle ON DELETE SET NULL (account deleted, comment survives).
+- CommentService injected with UserRepository directly; cross-module ref kept to JPA repo only (no User entity leak past the service boundary).
+- No @Transactional on controller; transactions live in CommentService as per architecture.md §7.1.
+
+### What was tested
+
+- `./mvnw compile test-compile` — clean.
+- `./mvnw test` — 83 tests, 0 failures, 0 errors (up from 73 before TASK-063; 10 new comment tests added).
+
+### Follow-up notes for TASK-064 (drawer rendering) and TASK-065 (composer)
+
+- TASK-064 (frontend): wire GET /api/tasks/{taskId}/comments using TanStack Query; render list in task drawer; authorName may be null (deleted user) — render as "Deleted user" or similar.
+- TASK-065 (composer): POST /api/tasks/{taskId}/comments; optimistic insert optional; invalidate comments query on success; show validation error if body blank.
+- Consider pagination for long threads in a future task — current endpoint returns all comments for a task with no limit.
