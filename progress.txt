@@ -1637,3 +1637,31 @@ Follow-up notes for TASK-049:
 - `useBoardQuery` returns `{ data: BoardResponse | undefined, isLoading, isError, error }` — standard TanStack Query shape, ready to destructure in the board page.
 - The board page currently shows a placeholder heading; TASK-049 should replace it with column/card rendering driven by `data?.columns`.
 - No optimistic DnD state yet; Zustand board store will be added in the drag-and-drop task.
+
+## 2026-04-27 — TASK-049: Render the read-only board page
+
+Files added:
+- `frontend/src/modules/kanban/components/BoardColumnView.tsx` — presentational column component. Takes a `BoardColumn`, renders a header (uppercase column name + pill-badge task count) and a vertical stack of `TaskCard`s, with a centered "No tasks" hint for empty columns.
+- `frontend/src/modules/kanban/components/TaskCard.tsx` — presentational card component. Takes a `BoardTaskCard`, renders title plus a priority badge. Priority colors mapped via const records: LOW (neutral), MEDIUM (info-soft), HIGH (warning-soft), URGENT (danger-soft).
+
+Files modified:
+- `frontend/src/pages/ProjectBoardPage.tsx` — replaced the placeholder heading with real rendering. Uses `useBoardQuery(projectId)` (already wired in TASK-048) and renders loading state ("Loading board…"), error state ("Couldn't load board." in danger color), or a horizontal flex row of `BoardColumnView`s. The board container is `overflow-x: auto` so many columns scroll horizontally instead of squeezing.
+
+Design decisions:
+- Components live in `modules/kanban/components/` per architecture.md §7. Page only orchestrates query state and layout; column/card visuals are isolated.
+- All styling uses tokens from `src/shared/styles/tokens.css` (pastel green palette, radius ≤ 8px, almost-flat shadows). No Tailwind, no styled-components, no hardcoded colors. Inline style objects are module-level consts — matches the pattern already used in other pages.
+- Server state stays in TanStack Query. No Zustand, no caching of fetched lists in local state. The kanban Zustand store is intentionally deferred until TASK-058+ (DnD/optimistic moves).
+- Read-only only: no drag handlers, no task-create form, no drawer click handler. Those land in TASK-051, TASK-053+, and TASK-058+ respectively.
+- TypeScript strict-clean: no `any`, no `eslint-disable`, no non-null assertions.
+
+What was tested:
+- `npm run build` inside `frontend/` -> tsc + vite build, 99 modules transformed, 0 errors.
+- `npm run lint` -> 2 pre-existing errors in `src/app/routes.tsx` (`react-refresh/only-export-components`); confirmed pre-existing by stashing TASK-049 changes and re-running lint with the same 2 errors. The 3 files touched by TASK-049 lint clean.
+- Browser-verify NOT executed in this environment (no live browser driver available). The render path is a straightforward `.map` over typed data; the underlying `useBoardQuery` was build-validated in TASK-048 and the backend endpoint has 5 controller tests in TASK-047. A live browser smoke-test should still be done before the MVP smoke-pass in TASK-083.
+- `code-reviewer` agent reviewed and returned PASS verdict.
+
+Follow-up risk / notes for TASK-050+:
+- The board page does not yet open a task drawer on card click — TASK-053/054 will add `taskId` URL state and the drawer; the natural place is to add an `onClick` to the `TaskCard` wrapper (or wrap it in a button) that pushes `?taskId=...` into the URL.
+- TASK-051 needs a "create task" control on the board; the column header is the obvious place to put a small "+ Add task" button.
+- TASK-058 (DnD) will need to pass drag handlers down through `BoardColumnView` to the cards. Both component signatures are tiny (`{ column }` and `{ task }`), so adding optional props for DnD context will be additive and non-breaking.
+- The two pre-existing routes.tsx lint errors are unrelated and out of scope for TASK-049. They should be addressed in a polish task (TASK-080 or similar) by extracting the `RequireAuth` / `PublicOnly` wrappers into their own files.
