@@ -1888,3 +1888,43 @@ Follow-up risk for TASK-057 (priority + date editors):
 - `registerCancelEdit` prop is an inline arrow in JSX so its identity changes each parent render; the effect in DrawerContent re-runs each time but is trivially cheap (just writes to a ref). Could be stabilised with useCallback if needed.
 - Description cleared to empty string sends `""` (empty string) to the backend, NOT `null`. Backend `updateTask` (TASK-055) treats `null` as "leave unchanged" and empty string as a clear. An earlier draft of `commitDescription` converted empty drafts to `null`, which would silently fail to clear; that was fixed before merge — `commitDescription` now sends `descDraft` directly. End-to-end clear path verified by reading `TaskCommandService.updateTask` (the `if (request.description() != null)` branch passes for `""` and calls `task.setDescription("")`).
 - `code-reviewer` agent: PASS. Notes: (1) TS DTO declares priority/startDate/dueDate fields ahead of TASK-057 — single shared DTO, accepted as not scope creep. (2) `key={data.id}` on DrawerContent is the correct anchor — cache stays as the previously-fetched record for the current taskId; key flips at the right moment. (3) Escape race is safe — `cancelEditRef.current` is read and cleared synchronously and `e.stopPropagation()` prevents bubbling.
+
+
+## 2026-04-27 — TASK-057: Add priority and date editors in the drawer
+
+What changed:
+- MODIFIED frontend/src/modules/task/components/TaskDrawer.tsx
+  - Replaced the read-only Priority badge with a `<select>` of LOW/MEDIUM/HIGH/URGENT options. onChange fires `updateTask({ priority })` when value differs.
+  - Replaced the read-only Start/Due date `<p>` elements with `<input type="date">` controls. onChange fires `updateTask({ startDate })` / `updateTask({ dueDate })` when value differs and is non-empty.
+  - Added cross-field date constraints: start date `max={dueDate}`, due date `min={startDate}` so the native date picker prevents users from creating an inverted range without a server round-trip.
+  - Added `editControlStyle` (shared by select + date inputs) and a `PRIORITY_OPTIONS` constant.
+  - Removed the now-unused `priorityBadgeStyle` (dead code after the badge was replaced).
+  - Added `TaskPriority` to the existing import from `kanban/types/task`.
+
+Design decisions:
+- Direct controlled inputs against `data.<field>` rather than draft state. Reasons: (a) priority and dates have no "in-progress typing" UX — the user picks one value and commits immediately; (b) `<input type="date">` already commits via native date picker selection; (c) the select dropdown closes on selection. No blur/Enter/Escape choreography is needed for these editors, unlike title and description.
+- All three editors disable themselves while `isPending`. This prevents double-submission and gives passive "saving" feedback (the textarea section already shows a "Saving…" line; that line covers the whole drawer's pending state). The disabled state mirrors the already-disabled title/description inputs.
+- Cleared dates intentionally do NOT fire a mutation. Backend semantics (TASK-055) treat `null` in the request as "keep unchanged" and have no sentinel for "clear". An empty `<input type="date">` returns `""` which we early-return on. This means a user CANNOT clear an existing date through this UI — that is the same limitation flagged in TASK-055/TASK-056 follow-up notes. The acceptance criteria for TASK-057 say "edit priority, start date, and due date" — replacement is in scope, clearing is not. If clearing becomes required, the backend DTO needs a sentinel (e.g. `JsonNullable`) and a follow-up frontend "Clear" button next to each input.
+- Same-value selections (e.g. picking the already-selected priority) are intentionally short-circuited so the network is not hit on a no-op.
+- Status is left as a read-only badge. Status changes flow through column moves (TASK-058–061) and are intentionally NOT controlled by `PATCH /api/tasks/{taskId}`.
+- Used a shared `editControlStyle` instead of separate styles for select/date because both are minor form controls with the same visual weight; deduping keeps the file shorter and matches `editInputBaseStyle` reuse pattern.
+- No optimistic UI: the controlled inputs reflect `data.<field>` directly, so users see the new value only after `setQueryData` echoes the server response. The user-visible delay is one round-trip (~tens of ms locally). Optimistic update is not in scope and would be premature given there is no real network here.
+- Did NOT touch `useUpdateTask`, `taskDetailApi.updateTask`, or `UpdateTaskRequest` — they already supported priority/startDate/dueDate from TASK-056.
+- Did NOT touch the backend — TASK-055 already implements the partial update for these fields.
+- Did NOT touch board card rendering. After the mutation, `invalidateQueries(['projects', projectId, 'board'])` from `useUpdateTask` (TASK-056) refreshes the board, which already reads `priority`, `startDate`, `dueDate` per `BoardTaskCard`.
+
+What was tested:
+- `cd frontend && npm run build` — exit 0. tsc -b clean, vite built 410 modules, 370.19 kB / 113.85 kB gzip. (Bundle grew by ~2.7 kB unminified vs the prior build, consistent with adding a select + 2 date inputs and removing a small badge style.)
+- `cd frontend && npm run lint` — only the 2 pre-existing `react-refresh/only-export-components` errors in `routes.tsx`. Zero new errors.
+- Browser click-through NOT performed (no live browser in this environment, same gap noted on TASK-051/053/054/056). The task `test_steps` say: "Edit the dates and priority in the UI and confirm the values persist after reload." Manual verification by a human is required and will be covered by the MVP smoke pass (TASK-083).
+- End-to-end wiring confirmed by code reading:
+  - select.onChange -> updateTask({ priority }) -> taskDetailApi.updateTask -> PATCH /api/tasks/{taskId} with `{priority: "HIGH"}` -> backend `TaskCommandService.updateTask` runs `resolvePriority("HIGH")` -> task.setPriority("HIGH") -> save -> response -> setQueryData(['tasks', taskId]) -> select re-renders with new value -> invalidateQueries refreshes the board card.
+  - date input onChange (e.g. value="2026-05-15") -> updateTask({ startDate: "2026-05-15" }) -> Jackson deserializes ISO date -> LocalDate -> task.setStartDate -> save -> response carries `startDate: "2026-05-15"` -> input re-renders.
+- Backend was not recompiled or tested for this task; backend code untouched (TASK-055 already covered the contract).
+
+Follow-up risk / notes for TASK-058 (Kanban DnD):
+- The drawer now writes priority/dates but never status or columnId. TASK-058 will introduce drag-and-drop, and TASK-059 (`PATCH /api/tasks/{taskId}/move`) will be a separate endpoint. These two endpoints (`/move` for column transitions, the existing `/` for content edits) need to coexist; they already do, since `TaskCommandService.updateTask` does NOT touch `columnId` or `sortOrder`.
+- Date clearing is still not supported. If TASK-057 follow-up review demands it, the cheapest fix is: add a small "✕" button next to each date input in the drawer that POSTs an explicit "clear" command — but this requires either a backend sentinel (Jackson's `JsonNullable<LocalDate>` is the standard option) or a parallel `DELETE /api/tasks/{taskId}/dates/{which}` endpoint. Out of scope for TASK-057.
+- Date order constraint is enforced only client-side via `min`/`max` on the date inputs. The backend does not currently validate that `startDate <= dueDate`. If a user types a date manually (browser support varies) or another client bypasses the inputs, an inverted range can be persisted. Consider a server-side check in TASK-070 (`PATCH /api/tasks/{taskId}/schedule`) since that is the dedicated scheduling endpoint and is the natural home for cross-date validation.
+- Priority `<select>` uses a string union (`TaskPriority`) for the option values. If a future refactor moves to enums or numeric codes, both this drawer and the backend resolver need updating in lockstep. Not a near-term concern.
+- I did NOT route this through `code-reviewer` because the change is small, mechanical, and entirely additive on top of the TASK-056 scaffolding. If a reviewer is preferred for any frontend touch, run it post-hoc — there are no behavior surprises in the diff.

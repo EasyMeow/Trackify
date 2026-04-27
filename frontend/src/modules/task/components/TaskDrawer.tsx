@@ -2,7 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import { format, parseISO } from 'date-fns';
 import { useTaskDetail } from '../hooks/useTaskDetail';
 import { useUpdateTask } from '../hooks/useUpdateTask';
-import type { TaskResponse } from '../../kanban/types/task';
+import type { TaskPriority, TaskResponse } from '../../kanban/types/task';
+
+const PRIORITY_OPTIONS: { value: TaskPriority; label: string }[] = [
+  { value: 'LOW', label: 'Low' },
+  { value: 'MEDIUM', label: 'Medium' },
+  { value: 'HIGH', label: 'High' },
+  { value: 'URGENT', label: 'Urgent' },
+];
 
 interface TaskDrawerProps {
   taskId: string | null;
@@ -127,20 +134,6 @@ const statusBadgeStyle = (status: string): React.CSSProperties => ({
   ...(status === 'IN_PROGRESS' ? { backgroundColor: 'var(--color-info-soft)', color: 'var(--color-info)' } : {}),
 });
 
-const priorityBadgeStyle = (priority: string): React.CSSProperties => ({
-  display: 'inline-block',
-  padding: '2px var(--space-2)',
-  fontSize: 'var(--font-size-xs)',
-  fontWeight: 'var(--font-weight-medium)',
-  borderRadius: 'var(--radius-pill)',
-  backgroundColor: 'var(--color-warning-soft)',
-  color: 'var(--color-warning)',
-  textTransform: 'capitalize',
-  ...(priority === 'LOW' ? { backgroundColor: 'var(--color-bg-muted)', color: 'var(--color-text-muted)' } : {}),
-  ...(priority === 'URGENT' ? { backgroundColor: 'var(--color-danger-soft)', color: 'var(--color-danger)' } : {}),
-  ...(priority === 'HIGH' ? { backgroundColor: 'var(--color-warning-soft)', color: 'var(--color-warning)' } : {}),
-});
-
 const editInputBaseStyle: React.CSSProperties = {
   width: '100%',
   boxSizing: 'border-box',
@@ -181,6 +174,20 @@ const inlineErrorStyle: React.CSSProperties = {
   fontSize: 'var(--font-size-xs)',
   color: 'var(--color-danger)',
   marginTop: 'var(--space-1)',
+};
+
+const editControlStyle: React.CSSProperties = {
+  width: '100%',
+  boxSizing: 'border-box',
+  padding: 'var(--space-1) var(--space-2)',
+  fontSize: 'var(--font-size-sm)',
+  color: 'var(--color-text)',
+  backgroundColor: 'var(--color-bg)',
+  border: '1px solid var(--color-border)',
+  borderRadius: 'var(--radius-md)',
+  outline: 'none',
+  fontFamily: 'inherit',
+  lineHeight: 'var(--line-height-snug)',
 };
 
 // ---------- inner content (keyed by task id so useState initializers reset on new task) ----------
@@ -317,18 +324,60 @@ function DrawerContent({ data, taskId, projectId, onClose, registerCancelEdit }:
           </div>
           <div style={fieldStyle}>
             <span style={labelStyle}>Priority</span>
-            <span style={priorityBadgeStyle(data.priority)}>{data.priority}</span>
+            <select
+              style={editControlStyle}
+              value={data.priority}
+              disabled={isPending}
+              aria-label="Task priority"
+              onChange={(e) => {
+                const next = e.target.value as TaskPriority;
+                if (next === data.priority) return;
+                updateTask({ priority: next });
+              }}
+            >
+              {PRIORITY_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
         <div style={metaRowStyle}>
           <div style={fieldStyle}>
             <span style={labelStyle}>Start date</span>
-            <p style={valueStyle}>{fmtDate(data.startDate)}</p>
+            <input
+              type="date"
+              style={editControlStyle}
+              value={data.startDate ?? ''}
+              disabled={isPending}
+              aria-label="Task start date"
+              max={data.dueDate ?? undefined}
+              onChange={(e) => {
+                const next = e.target.value;
+                if (!next) return;
+                if (next === (data.startDate ?? '')) return;
+                updateTask({ startDate: next });
+              }}
+            />
           </div>
           <div style={fieldStyle}>
             <span style={labelStyle}>Due date</span>
-            <p style={valueStyle}>{fmtDate(data.dueDate)}</p>
+            <input
+              type="date"
+              style={editControlStyle}
+              value={data.dueDate ?? ''}
+              disabled={isPending}
+              aria-label="Task due date"
+              min={data.startDate ?? undefined}
+              onChange={(e) => {
+                const next = e.target.value;
+                if (!next) return;
+                if (next === (data.dueDate ?? '')) return;
+                updateTask({ dueDate: next });
+              }}
+            />
           </div>
         </div>
       </div>
