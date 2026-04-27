@@ -1,12 +1,34 @@
 import 'gantt-task-react/dist/index.css';
 import { useParams } from 'react-router-dom';
 import { Gantt, ViewMode } from 'gantt-task-react';
+import type { Task as GanttTask } from 'gantt-task-react';
+import { format } from 'date-fns';
 import { useProjectTimeline } from '../modules/gantt/hooks/useProjectTimeline';
+import { useScheduleTask } from '../modules/gantt/hooks/useScheduleTask';
 import { mapTimelineToGantt } from '../modules/gantt/utils/mapTimelineToGantt';
 
 export default function ProjectTimelinePage() {
   const { projectId } = useParams<{ projectId: string }>();
   const { data, isLoading, error } = useProjectTimeline(projectId);
+  const scheduleTask = useScheduleTask(projectId);
+
+  // Called by gantt-task-react for both drag (move) and resize operations.
+  // Returns false to undo the change when the range is inverted (end <= start).
+  function handleDateChange(task: GanttTask): boolean | void {
+    const { start, end } = task;
+
+    // Guard: reject inverted or zero-length ranges — backend does not validate this.
+    if (end <= start) {
+      return false;
+    }
+
+    // date-fns format uses local time, avoiding UTC-midnight day-shift bugs that
+    // toISOString().slice(0,10) causes in negative-UTC timezones.
+    const startDate = format(start, 'yyyy-MM-dd');
+    const dueDate = format(end, 'yyyy-MM-dd');
+
+    scheduleTask.mutate({ taskId: task.id, startDate, dueDate });
+  }
 
   if (isLoading) {
     return (
@@ -60,6 +82,7 @@ export default function ProjectTimelinePage() {
         barBackgroundColor="var(--color-accent-soft)"
         barBackgroundSelectedColor="var(--color-accent)"
         todayColor="rgba(74, 139, 111, 0.12)"
+        onDateChange={handleDateChange}
       />
       {datelessCount > 0 && (
         <p style={mutedStyle}>

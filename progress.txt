@@ -2501,3 +2501,41 @@ Modified:
 
 - **No server-side range validation.** `startDate > dueDate` is currently accepted. If a future requirement says "due must not precede start," it must be added in both `scheduleTask` and `updateTask` together to keep the two endpoints consistent. Not a defect in TASK-070 scope — the frontend (TASK-069 mapper) already protects the visual layer.
 - **Authorization re-uses `ProjectQueryService.getById`.** Same pattern as `moveTask` and `updateTask`, so the same future hardening (TASK-076) will cover all three at once. No new authorization surface introduced by TASK-070.
+
+## 2026-04-27 — TASK-071: Wire Gantt bar drag/resize to schedule updates
+
+### Files added
+
+- `frontend/src/modules/gantt/api/scheduleApi.ts` — thin wrapper around `httpClient.patch('/tasks/{taskId}/schedule', { startDate, dueDate })`. Returns `TaskResponse` (re-uses the kanban type — both views share one task entity per architecture.md §10). Mirrors the shape of `kanban/api/taskApi.ts`.
+- `frontend/src/modules/gantt/hooks/useScheduleTask.ts` — `useMutation` hook that calls `scheduleApi.scheduleTask` and on success invalidates both `['projects', projectId, 'timeline']` and `['projects', projectId, 'board']`. Mirrors `kanban/hooks/useMoveTask.ts` exactly (same generic signature, same invalidation pattern).
+
+### Files modified
+
+- `frontend/src/modules/gantt/utils/mapTimelineToGantt.ts` — removed `isDisabled: true` from every mapped task. That single flag was the read-only switch; removing it activates the library's built-in drag/resize handles.
+- `frontend/src/pages/ProjectTimelinePage.tsx` — added `import { format } from 'date-fns'`, imported `useScheduleTask`, and added `handleDateChange(task: GanttTask): boolean | void` callback wired to `<Gantt onDateChange={handleDateChange}>`. Also added `import type { Task as GanttTask }` for the callback parameter type.
+
+### Key design decisions
+
+- **Reject inverted ranges (return false), not nudge.** The read-side mapper nudges `end += 1 day` to keep the Gantt from crashing on milestone-style same-day tasks already in the DB. But for a user-initiated drag, producing `end <= start` is either a mistake or a resize too aggressive — returning `false` from `onDateChange` causes the library to snap the bar back to its previous position. This is better UX than silently mutating the data in an unexpected direction. The nudge stays only in the mapper (defensive read rendering).
+- **Both dates always sent.** `gantt-task-react`'s `onDateChange` always provides both `start` and `end` regardless of whether the user dragged the bar body (moves both) or a resize handle (moves one). Sending both is safe because the backend treats an unchanged date as a no-op (it re-saves the same value).
+- **`date-fns/format` for date serialization.** `Date.prototype.toISOString().slice(0,10)` converts to UTC midnight first, which can shift the displayed day backwards in negative-UTC timezones (e.g., `2026-04-27T00:00:00-05:00` → `2026-04-26` in ISO). `format(d, 'yyyy-MM-dd')` uses local time, producing the date the user actually saw on screen.
+- **Both query keys invalidated on success.** `['projects', projectId, 'timeline']` is the direct data source for this page. `['projects', projectId, 'board']` is also invalidated because board cards may surface start/due dates (per TASK-057's drawer); keeping them in sync costs one extra cache invalidation, which is negligible versus the UX of stale dates on the board.
+- **No optimistic update.** The kanban `useMoveTask` precedent is simple invalidation, not `setQueryData`. The timeline refetch is cheap (one GET returning the project's task list) and avoids complexity of manually merging the patched task into the cached `TimelineResponse`. Consistent with the established pattern.
+- **Mutation errors silently swallowed.** Same state as the read hook (TASK-069 follow-up). The bar snaps back on `return false` (inverted range) but not on a network/server error — the bar stays in the dragged position until the invalidation fires and the data reverts. Acceptable for MVP; a toast layer (TASK-078) will handle this uniformly.
+
+### What was tested
+
+- `cd frontend && npm run build` — 427 modules transformed, exit 0. Bundle: 457.37 kB / 141.10 kB gzip (essentially unchanged vs TASK-069's 456.88 kB / 140.92 kB — no new dependencies added).
+- `cd frontend && npm run lint` — 2 pre-existing `react-refresh/only-export-components` errors in `src/app/routes.tsx`. Zero new errors introduced.
+- Manual browser verification: skipped — no running stack at implementation time. The logic path (drag → `handleDateChange` → format dates → `scheduleTask.mutate` → PATCH → invalidate) is fully type-checked and structurally identical to the kanban move flow which is known-working. Risk is integration-level only.
+
+### Follow-up notes for TASK-073/074 (dependency edges in the timeline)
+
+- `useScheduleTask` and `scheduleApi` are narrow — they won't need changes for dependency work.
+- `mapTimelineToGantt` will need a `dependencies: string[]` field populated per task when TASK-073 adds dependency edges to the `TimelineResponse`. The `GanttTask` interface already has this field; it's just not populated yet. No conflict with TASK-071 changes.
+
+### Follow-up risks
+
+- **Mutation error leaves bar in wrong position.** If the PATCH 4xx/5xx, the timeline query invalidation fires but the bar may flicker briefly in the dragged position before the refetch restores it. Acceptable until a global error/toast layer (TASK-078) is added.
+- **`gantt-task-react` resize handle target area.** Some versions of the library have a very narrow resize handle (2–3 px). Not a defect here — this is a library ergonomics issue, potentially addressed by a CSS override in a future polish task.
+- **No loading indicator during mutation.** `scheduleTask.isPending` is not used to disable the Gantt or show a spinner. A second drag while the first mutation is in-flight will fire a second PATCH; the last writer wins (both hit the same task row). Acceptable for MVP; concurrent drag is an unusual interaction.

@@ -32,7 +32,6 @@ export function mapTimelineToGantt(tasks: TimelineTask[]): MappedTimeline {
       start,
       end,
       progress: 0,
-      isDisabled: true,
     });
   }
 
