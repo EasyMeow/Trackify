@@ -6,6 +6,7 @@ import com.trackify.project.application.ProjectQueryService;
 import com.trackify.task.domain.Task;
 import com.trackify.common.exception.NotFoundException;
 import com.trackify.task.dto.CreateTaskRequest;
+import com.trackify.task.dto.MoveTaskRequest;
 import com.trackify.task.dto.TaskResponse;
 import com.trackify.task.dto.UpdateTaskRequest;
 import com.trackify.task.infrastructure.TaskRepository;
@@ -151,6 +152,58 @@ public class TaskCommandService {
         if (request.dueDate() != null) {
             task.setDueDate(request.dueDate());
         }
+
+        Task saved = taskRepository.save(task);
+        return toResponse(saved);
+    }
+
+    /**
+     * Moves a task to a new column and sort position (TASK-059).
+     *
+     * <p>Used by the Kanban drag-and-drop flow. The same endpoint handles both
+     * within-column reordering ({@code columnId} unchanged, new {@code sortOrder})
+     * and cross-column moves (different {@code columnId}).
+     *
+     * <p>Authorization: loads the task, then delegates to
+     * {@link ProjectQueryService#getById} which throws 404/403 if the caller is
+     * not a workspace member.
+     *
+     * <p>Cross-project safety: the destination column must belong to the same
+     * project as the task. Rejects with {@link IllegalArgumentException} (HTTP 400)
+     * otherwise — preventing a task from being smuggled into another project's
+     * board via a forged {@code columnId}.
+     *
+     * <p>Status field is intentionally not modified here. Column-to-status mapping
+     * is not part of the MVP scope; the lifecycle status remains independent of
+     * board position. Tasks dragged to a "Done" column keep their stored status
+     * until edited explicitly via {@code PATCH /api/tasks/{id}}.
+     *
+     * @param taskId  UUID of the task to move
+     * @param userId  authenticated caller's UUID
+     * @param request validated move payload (columnId and sortOrder both required)
+     * @return the updated task as a {@link TaskResponse}
+     * @throws NotFoundException if the task or destination column does not exist
+     * @throws IllegalArgumentException if the destination column is in a different project
+     * @throws com.trackify.common.exception.ForbiddenException if the caller cannot
+     *         access the task's project workspace
+     */
+    public TaskResponse moveTask(UUID taskId, UUID userId, MoveTaskRequest request) {
+        Task task = taskRepository.findById(taskId)
+                .orElseThrow(() -> new NotFoundException("Task not found"));
+
+        // Authorization — throws 404/403 if not accessible
+        projectQueryService.getById(task.getProjectId(), userId);
+
+        BoardColumn targetColumn = boardColumnRepository.findById(request.columnId())
+                .orElseThrow(() -> new NotFoundException("Board column not found"));
+
+        if (!targetColumn.getProjectId().equals(task.getProjectId())) {
+            throw new IllegalArgumentException(
+                    "Destination column does not belong to the task's project");
+        }
+
+        task.setColumnId(request.columnId());
+        task.setSortOrder(request.sortOrder());
 
         Task saved = taskRepository.save(task);
         return toResponse(saved);

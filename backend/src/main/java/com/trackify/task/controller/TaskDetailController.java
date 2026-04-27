@@ -3,6 +3,7 @@ package com.trackify.task.controller;
 import com.trackify.auth.application.LocalUserPrincipal;
 import com.trackify.task.application.TaskCommandService;
 import com.trackify.task.application.TaskQueryService;
+import com.trackify.task.dto.MoveTaskRequest;
 import com.trackify.task.dto.TaskResponse;
 import com.trackify.task.dto.UpdateTaskRequest;
 
@@ -78,6 +79,28 @@ public class TaskDetailController {
             @RequestBody @Valid UpdateTaskRequest request,
             @AuthenticationPrincipal LocalUserPrincipal principal) {
         TaskResponse response = taskCommandService.updateTask(taskId, principal.userId(), request);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Moves a task to a new column and/or sort position (TASK-059).
+     *
+     * <p>Backs Kanban drag-and-drop. Both within-column reorder and cross-column
+     * moves go through this single endpoint. The body must include both
+     * {@code columnId} and {@code sortOrder}; the client is expected to compute
+     * the fractional sort position (e.g. midpoint between neighbors).
+     *
+     * @param taskId    UUID of the task being moved
+     * @param request   validated move payload
+     * @param principal authenticated caller
+     * @return HTTP 200 with the updated {@link TaskResponse} body
+     */
+    @PatchMapping("/{taskId}/move")
+    public ResponseEntity<TaskResponse> moveTask(
+            @PathVariable UUID taskId,
+            @RequestBody @Valid MoveTaskRequest request,
+            @AuthenticationPrincipal LocalUserPrincipal principal) {
+        TaskResponse response = taskCommandService.moveTask(taskId, principal.userId(), request);
         return ResponseEntity.ok(response);
     }
 }
