@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trackify.auth.application.LocalUserDetailsService;
 import com.trackify.auth.application.LocalUserPrincipal;
+import com.trackify.common.exception.ForbiddenException;
 import com.trackify.common.exception.NotFoundException;
 import com.trackify.config.JacksonConfig;
 import com.trackify.config.SecurityConfig;
@@ -224,6 +225,34 @@ class TaskMoveControllerTest {
                 .andExpect(jsonPath("$.error").value("VALIDATION_FAILED"));
 
         verifyNoInteractions(taskCommandService);
+    }
+
+    /**
+     * TASK-076: cross-workspace access denial. Moving a task in a project the
+     * caller does not belong to must produce HTTP 403 — not a successful move
+     * and not a 404 (which would leak existence). The service throws
+     * {@link ForbiddenException}; the controller must surface it with the
+     * standard error envelope.
+     */
+    @Test
+    void nonMemberReceivesForbidden403() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+        UUID columnId = UUID.randomUUID();
+
+        when(taskCommandService.moveTask(eq(taskId), eq(userId), any(MoveTaskRequest.class)))
+                .thenThrow(new ForbiddenException("Project not accessible"));
+
+        String body = objectMapper.writeValueAsString(new MoveTaskRequest(columnId, 1.0));
+
+        mockMvc.perform(patch("/api/tasks/{taskId}/move", taskId)
+                        .with(auth(userId))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403))
+                .andExpect(jsonPath("$.error").value("FORBIDDEN"))
+                .andExpect(jsonPath("$.message").value("Project not accessible"));
     }
 
     @Test

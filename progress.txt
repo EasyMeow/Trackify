@@ -2709,3 +2709,63 @@ Modified:
 - **No optimistic UI for create/delete.** The list refreshes only after the mutation succeeds. A failed create surfaces an `ApiError` message under the add row; a failed delete currently fails silently (no toast yet — that's TASK-079's job). If a user spams Add while a create is in flight, the button is disabled, but the select isn't reset until success — minor cosmetic issue, not a correctness one.
 - **No confirmation on Remove.** Dependencies are cheap to recreate, so the bare button matches the architecture's minimalism principle. If a future task adds undo/toast infrastructure (TASK-079), wire Remove through it.
 - **Stable list ordering.** Dependencies render in the order they arrive from the timeline payload, which is `findByPredecessorTaskIdIn` order (database-dependent). For a handful of edges this is invisible; if it becomes inconsistent, sort by `createdAt` in the component.
+
+
+## 2026-04-28 — TASK-076: Add authorization checks across workspace and project endpoints
+
+### Summary
+
+Audited authorization on every workspace-, project-, task-, comment-, and dependency-scoped endpoint. **All checks were already in place** (consistent pattern: `ProjectQueryService.getById(projectId, userId)` throws `ForbiddenException` when the caller is not a workspace member, before any data is read or mutated). The acceptance criterion ("verifies membership before returning data or mutating state") is satisfied by the existing code; the work for this task was extending **test coverage** to prove cross-workspace access is rejected on the three task mutation endpoints that lacked an explicit forbidden test.
+
+### Files modified
+
+- `backend/src/test/java/com/trackify/task/controller/TaskUpdateControllerTest.java` — added `nonMemberReceivesForbidden403()` covering `PATCH /api/tasks/{taskId}` (matches the existing pattern in `TaskControllerTest`/`TaskDetailControllerTest`/`BoardControllerTest`/`TimelineControllerTest`).
+- `backend/src/test/java/com/trackify/task/controller/TaskMoveControllerTest.java` — added `nonMemberReceivesForbidden403()` covering `PATCH /api/tasks/{taskId}/move`.
+- `backend/src/test/java/com/trackify/task/controller/TaskScheduleControllerTest.java` — added `nonMemberReceivesForbidden403()` covering `PATCH /api/tasks/{taskId}/schedule`.
+
+No production code was modified — the test step was the gap.
+
+### Endpoint authorization matrix (audit result)
+
+| Module | Endpoint | Membership check | Test for 403 |
+|---|---|---|---|
+| workspace | `GET /api/workspaces` | filtered by user id in service (no leakage path) | yes (`otherUsersWorkspacesAreNotVisible`) |
+| project | `GET /api/workspaces/{id}/projects` | `WorkspaceMemberRepository.existsByWorkspaceIdAndUserId` in `ProjectQueryService.listForWorkspace` | yes (`nonMemberReceivesForbidden`) |
+| project | `POST /api/workspaces/{id}/projects` | same check in `ProjectCreateService.create` | yes (`nonMemberCannotCreateProject`) |
+| project | `GET /api/projects/{id}` | same check in `ProjectQueryService.getById` | yes (`nonMemberReceivesForbidden`) |
+| task | `POST /api/projects/{id}/tasks` | `ProjectQueryService.getById` in `TaskCommandService.createTask` | yes (`nonMemberReceivesForbidden403`) |
+| task | `GET /api/tasks/{id}` | `ProjectQueryService.getById(task.projectId, userId)` in `TaskQueryService.getById` | yes (`nonMemberReceivesForbidden403`) |
+| task | `PATCH /api/tasks/{id}` | same in `TaskCommandService.updateTask` | **added** (`nonMemberReceivesForbidden403`) |
+| task | `PATCH /api/tasks/{id}/move` | same in `TaskCommandService.moveTask` (+ same-project guard on destination column) | **added** (`nonMemberReceivesForbidden403`) |
+| task | `PATCH /api/tasks/{id}/schedule` | same in `TaskCommandService.scheduleTask` | **added** (`nonMemberReceivesForbidden403`) |
+| dependencies | `POST /api/tasks/{id}/dependencies` | same in `TaskDependencyService.createDependency` (+ same-project guard) | yes (`createDependencyForbiddenReturns403`) |
+| dependencies | `DELETE /api/tasks/{id}/dependencies/{depId}` | same in `TaskDependencyService.deleteDependency` (+ edge-successor match) | yes (`deleteDependencyForbiddenReturns403`) |
+| comments | `GET /api/tasks/{id}/comments` | `verifyAccess` → `ProjectQueryService.getById` in `CommentService.listComments` | yes (`listCommentsForbiddenWhenCallerLacksAccess`) |
+| comments | `POST /api/tasks/{id}/comments` | same in `CommentService.createComment` | yes (`createCommentForbiddenWhenCallerLacksAccess`) |
+| board | `GET /api/projects/{id}/board` | `ProjectQueryService.getById` in `BoardQueryService.getBoard` | yes (`nonMemberReceivesForbidden`) |
+| timeline | `GET /api/projects/{id}/timeline` | same in `TimelineService.getTimeline` | yes (`nonMemberReceivesForbidden`) |
+
+Every row now has a controller-level test that proves a non-member receives 403.
+
+### Key design decisions
+
+- **Audit-first, code-second.** TASK-076's acceptance criterion is about the *endpoints* having checks, and the test step is to *prove* those checks via tests. Before adding tests I did the per-endpoint audit and confirmed the checks were already in place — no controller bypass, no service that skips `ProjectQueryService.getById`. Adding production code to "harden" something that was already hardened would have been scope creep.
+- **Reused the existing forbidden-test pattern.** Every other "non-member returns 403" test in the repo does the same three things: `@MockitoBean` the service → `when(service.method(...)).thenThrow(new ForbiddenException(...))` → assert `status().isForbidden()` and the standard `{status, error, message}` envelope. The three new tests follow that template exactly so they read like the surrounding tests at a glance and stay easy to maintain.
+- **`@WebMvcTest` + mocked service is the right scope here.** A `@SpringBootTest` integration test against H2 or Testcontainers would also exercise the real `ProjectQueryService.getById` path, but that path is already covered by the *service-level* unit tests (e.g., `ProjectQueryServiceTest`, `TaskCommandServiceMoveTest`). Splitting authorization across two layers — the service throws when `existsByWorkspaceIdAndUserId` returns false; the controller propagates that to HTTP — is the design from architecture.md §10. Each layer has its own focused tests; an end-to-end test would duplicate without adding signal.
+- **No production change.** Re-reading `SecurityConfig`, every `*Controller`, and the application services confirmed there is no endpoint that skips the membership check, no controller that calls a repository directly, and no `@PreAuthorize` shortcut that could be bypassed. Authorization sits in the application layer where the spec puts it.
+- **Cross-project guards are still in place.** `TaskCommandService.moveTask` rejects moves whose destination column lives in a different project (400). `TaskDependencyService.createDependency` rejects edges whose predecessor and successor live in different projects (400). These were added in earlier tasks (TASK-059, TASK-072) and remain untouched.
+
+### What was tested
+
+- `cd backend && ./mvnw -q compile test-compile` — exit 0.
+- `cd backend && ./mvnw test` — `Tests run: 107, Failures: 0, Errors: 0, Skipped: 0` (was 104 before; +3 for the new forbidden tests). All previously passing tests still pass.
+
+### Follow-up notes for TASK-077 (standardize 401, 403, 404 API responses)
+
+- The standard error envelope (`{ status, error, message, path?, timestamp? }`) is already returned by every forbidden test added here, by every existing forbidden test, and by the global handler in `common/exception`. TASK-077's "consistent JSON shape" is therefore largely already true. The gap to close is most likely the **401 path** — Spring Security's default 401 returns an empty body or HTML, not the same envelope. The unauthenticated tests in this repo only assert `status().isUnauthorized()`, not the body shape; TASK-077 should add a custom `AuthenticationEntryPoint` that emits the same JSON envelope and add tests asserting the body for 401.
+
+### Follow-up risks
+
+- **Test-only verification of authorization.** The new tests prove the *controller* surfaces 403 when the service throws `ForbiddenException`. They mock the service, so they do not re-prove that `ProjectQueryService.getById` actually queries `WorkspaceMemberRepository.existsByWorkspaceIdAndUserId`. That is covered by the service-layer tests; together the two layers prove the end-to-end behaviour. Anyone refactoring authorization out of the service layer would need to update both test sets and any reviewer should make sure that the service-layer membership check tests are not silently weakened in the same change.
+- **Dependency endpoints share one auth check.** `TaskDependencyService` calls `ProjectQueryService.getById(successor.projectId, userId)` and trusts that the predecessor lives in the same project (enforced by the same-project guard). If a future task ever loosens the same-project guard to allow cross-project dependencies, the predecessor side would need its own membership check before the edge is created. There is a comment about this trade-off in the TASK-072 progress note (search "predecessor authorization must be rechecked separately").
+- **No 401-body assertion.** The unauthenticated tests still only check `status().isUnauthorized()`, not the response body. Once TASK-077 standardizes 401, those tests should be extended to assert the envelope shape. Out of scope for TASK-076.

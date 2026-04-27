@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trackify.auth.application.LocalUserDetailsService;
 import com.trackify.auth.application.LocalUserPrincipal;
+import com.trackify.common.exception.ForbiddenException;
 import com.trackify.common.exception.NotFoundException;
 import com.trackify.config.JacksonConfig;
 import com.trackify.config.SecurityConfig;
@@ -180,6 +181,32 @@ class TaskUpdateControllerTest {
                 .andExpect(jsonPath("$.error").value("VALIDATION_FAILED"));
 
         verifyNoInteractions(taskCommandService);
+    }
+
+    /**
+     * TASK-076: cross-workspace access denial. The service throws
+     * {@link ForbiddenException} when the caller is not a member of the
+     * task's owning workspace; the controller must surface that as HTTP 403
+     * with the standard error envelope rather than leaking task data.
+     */
+    @Test
+    void nonMemberReceivesForbidden403() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+
+        when(taskCommandService.updateTask(eq(taskId), eq(userId), any(UpdateTaskRequest.class)))
+                .thenThrow(new ForbiddenException("Project not accessible"));
+
+        String body = "{\"title\":\"Hijack attempt\"}";
+
+        mockMvc.perform(patch("/api/tasks/{taskId}", taskId)
+                        .with(auth(userId))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403))
+                .andExpect(jsonPath("$.error").value("FORBIDDEN"))
+                .andExpect(jsonPath("$.message").value("Project not accessible"));
     }
 
     @Test

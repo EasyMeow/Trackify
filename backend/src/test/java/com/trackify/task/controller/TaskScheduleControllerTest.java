@@ -14,6 +14,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trackify.auth.application.LocalUserDetailsService;
 import com.trackify.auth.application.LocalUserPrincipal;
+import com.trackify.common.exception.ForbiddenException;
 import com.trackify.common.exception.NotFoundException;
 import com.trackify.config.JacksonConfig;
 import com.trackify.config.SecurityConfig;
@@ -207,6 +208,33 @@ class TaskScheduleControllerTest {
                 .andExpect(jsonPath("$.status").value(404))
                 .andExpect(jsonPath("$.error").value("NOT_FOUND"))
                 .andExpect(jsonPath("$.message").value("Task not found"));
+    }
+
+    /**
+     * TASK-076: cross-workspace access denial. Rescheduling a task in a project
+     * the caller does not belong to must produce HTTP 403 with the standard
+     * error envelope — never a silent date update and never a 404 (which would
+     * leak task existence).
+     */
+    @Test
+    void nonMemberReceivesForbidden403() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+
+        when(taskCommandService.scheduleTask(eq(taskId), eq(userId), any(ScheduleTaskRequest.class)))
+                .thenThrow(new ForbiddenException("Project not accessible"));
+
+        String body = objectMapper.writeValueAsString(
+                new ScheduleTaskRequest(LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 15)));
+
+        mockMvc.perform(patch("/api/tasks/{taskId}/schedule", taskId)
+                        .with(auth(userId))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403))
+                .andExpect(jsonPath("$.error").value("FORBIDDEN"))
+                .andExpect(jsonPath("$.message").value("Project not accessible"));
     }
 
     @Test
