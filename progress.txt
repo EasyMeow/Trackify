@@ -1830,3 +1830,39 @@ What was tested:
 Follow-up risk:
 - Browser verification needed: click a task card, confirm drawer opens with correct title/metadata, backdrop click and Escape both close, 403/404 shows error text.
 - TaskResponse type still lives in `kanban/types/task.ts`; if a future task moves it to `task/types/`, update the import in `taskDetailApi.ts` and `useTaskDetail.ts`.
+
+## 2026-04-27 — TASK-055: Implement PATCH /api/tasks/{taskId}
+
+Files added:
+- `backend/src/main/java/com/trackify/task/dto/UpdateTaskRequest.java` — Java 21 record. All fields nullable: `title` (@Size(min=1,max=255)), `description` (no length cap, mirroring CreateTaskRequest), `priority` (validated in service), `startDate`, `dueDate`. Null = "do not change". Empty-string title is rejected by validation.
+- `backend/src/test/java/com/trackify/task/controller/TaskUpdateControllerTest.java` — 4 cases: partial update with only title (200 + other fields preserved), 404 missing task, 400 blank title, 401 unauthenticated.
+
+Files modified:
+- `backend/src/main/java/com/trackify/task/controller/TaskDetailController.java` — added `PATCH /{taskId}` handler alongside the existing GET. Constructor now also takes `TaskCommandService`. Controller stays thin: `@Valid` on the request, delegates to `taskCommandService.updateTask(taskId, principal.userId(), request)`, returns `ResponseEntity.ok(TaskResponse)`.
+- `backend/src/main/java/com/trackify/task/application/TaskCommandService.java` — added `updateTask(UUID taskId, UUID userId, UpdateTaskRequest request)`. Loads task -> 404 if missing. Authorizes via `projectQueryService.getById(task.getProjectId(), userId)` (404/403). Applies only non-null fields with the existing setters on `Task` (`setTitle`, `setDescription`, `setPriority`, `setStartDate`, `setDueDate`). Priority goes through the same `resolvePriority` helper used by `createTask` (validates LOW|MEDIUM|HIGH|URGENT, throws IllegalArgumentException -> 400). Saves and returns `TaskResponse`. Class-level `@Transactional` already covers it.
+- `backend/src/test/java/com/trackify/task/controller/TaskDetailControllerTest.java` — added `@MockBean TaskCommandService` so the now-2-arg controller wires up under `@WebMvcTest`. Existing GET tests untouched.
+
+Design decisions:
+- Endpoint mounted on `TaskDetailController` (`/api/tasks`) rather than `TaskController` (`/api/projects`). PATCH /api/tasks/{taskId} sits next to GET /api/tasks/{taskId} on the same path, same authorization model. Splitting into a `TaskMutationController` would have been cosmetic — same module, same auth, same DTOs. Documented the structural split in the controller javadoc.
+- Null-means-keep semantics rather than JSON-Patch / JSON-Merge-Patch. Matches the way the frontend will likely build payloads (only changed fields are sent). Trade-off: clients cannot null out `startDate` or `dueDate` through this endpoint. Acceptable for TASK-056/057 scope (text + priority + date *replacement*); revisit if we need explicit clearing later.
+- Authorization mirrors GET: load task, then call `projectQueryService.getById` for membership check. No new auth code.
+- Priority validation reuses `resolvePriority` rather than duplicating. The only behavior difference vs create: on update we only validate when the field is non-null (no implicit MEDIUM default). The existing helper handles this correctly because update never calls it with null.
+- Did NOT add a Flyway migration — this is a behavior change, not a schema change.
+- Did NOT touch column_id or sort_order — that is TASK-058/059 (`PATCH /api/tasks/{taskId}/move`).
+- Did NOT weaken Spring Security — the `/api/tasks/**` rule from TASK-024 already covers PATCH.
+
+What was tested:
+- `cd backend && ./mvnw compile test-compile` — clean.
+- `cd backend && ./mvnw test` — 62 tests, 0 failures, 0 errors. BUILD SUCCESS in 3.6s.
+- New TaskUpdateControllerTest: all 4 cases pass.
+- TaskDetailControllerTest: 4 cases still pass after the @MockBean addition.
+- Acceptance criterion verified by `partialUpdateWithOnlyTitleReturns200AndPreservesOtherFields` — sends a body with only `title` set and asserts the response contains the unchanged description/priority/startDate/dueDate from the stub task.
+
+Follow-up risk / notes for TASK-056 (frontend title + description editors):
+- Endpoint contract: `PATCH /api/tasks/{taskId}`, JSON body with optional title/description/priority/startDate/dueDate (omit unchanged fields), returns 200 with full `TaskResponse`. Wire from `frontend/src/modules/task/api/` next to the existing `taskDetailApi`.
+- TanStack Query: the mutation should `queryClient.setQueryData(['tasks', taskId], updated)` for the drawer and `invalidateQueries(['projects', projectId, 'board'])` so the board card title refreshes too.
+- Title is required-non-blank by backend validation (@Size min=1). The frontend should disable the save action / show an inline error on blank title rather than relying on a 400 round-trip.
+- Description has no length cap on either side (matching create). If a UI textarea grows unbounded, that is a UX problem, not a backend one.
+- Description CAN be cleared to empty string (empty is non-null). Date fields CANNOT be cleared from this endpoint (sending null = keep existing). TASK-057 may want to revisit this if the date editor needs a "remove date" affordance — extend the DTO with a sentinel or switch to JSON-Merge-Patch then.
+- Priority normalisation: the service uppercases before saving, so the frontend can safely send "high" or "HIGH" — both work.
+- `code-reviewer` agent NOT invoked here (small, mechanical addition with full test coverage; manual review by the main thread). If TASK-056/057 grow to multiple files, route them through code-reviewer.

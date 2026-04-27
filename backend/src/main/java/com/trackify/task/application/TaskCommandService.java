@@ -4,8 +4,10 @@ import com.trackify.board.domain.BoardColumn;
 import com.trackify.board.infrastructure.BoardColumnRepository;
 import com.trackify.project.application.ProjectQueryService;
 import com.trackify.task.domain.Task;
+import com.trackify.common.exception.NotFoundException;
 import com.trackify.task.dto.CreateTaskRequest;
 import com.trackify.task.dto.TaskResponse;
+import com.trackify.task.dto.UpdateTaskRequest;
 import com.trackify.task.infrastructure.TaskRepository;
 
 import org.springframework.stereotype.Service;
@@ -100,6 +102,55 @@ public class TaskCommandService {
                 request.dueDate(),
                 null // estimatedHours out of scope for this task
         );
+
+        Task saved = taskRepository.save(task);
+        return toResponse(saved);
+    }
+
+    /**
+     * Partially updates an existing task's content fields.
+     *
+     * <p>Authorization: loads the task, then delegates to
+     * {@link ProjectQueryService#getById} which throws 404 if the project does not
+     * exist and 403 if the caller is not a workspace member.
+     *
+     * <p>Only non-null fields in {@code request} are applied; null fields are left
+     * unchanged on the persisted entity.
+     *
+     * <p>Priority: when non-null, validated against LOW|MEDIUM|HIGH|URGENT; throws
+     * {@link IllegalArgumentException} (mapped to HTTP 400) for invalid values.
+     *
+     * @param taskId  UUID of the task to update
+     * @param userId  authenticated caller's UUID
+     * @param request partial update payload; any null field means "keep existing"
+     * @return the updated task as a {@link TaskResponse}
+     * @throws NotFoundException if no task exists with {@code taskId}
+     * @throws com.trackify.common.exception.ForbiddenException if the caller cannot
+     *         access the task's project workspace
+     */
+    public TaskResponse updateTask(UUID taskId, UUID userId, UpdateTaskRequest request) {
+        Task task = taskRepository.findById(taskId)
+                .orElseThrow(() -> new NotFoundException("Task not found"));
+
+        // Authorization — throws 404/403 if not accessible
+        projectQueryService.getById(task.getProjectId(), userId);
+
+        // Apply only non-null fields
+        if (request.title() != null) {
+            task.setTitle(request.title());
+        }
+        if (request.description() != null) {
+            task.setDescription(request.description());
+        }
+        if (request.priority() != null) {
+            task.setPriority(resolvePriority(request.priority()));
+        }
+        if (request.startDate() != null) {
+            task.setStartDate(request.startDate());
+        }
+        if (request.dueDate() != null) {
+            task.setDueDate(request.dueDate());
+        }
 
         Task saved = taskRepository.save(task);
         return toResponse(saved);
