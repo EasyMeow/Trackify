@@ -2329,3 +2329,45 @@ Modified:
 - **No cycle prevention yet.** Until TASK-072 ships, nothing guards against creating cyclic dependencies. Acceptable because the schema has no public write path: there is no API, no service, and no UI for creating edges. A cycle could only be inserted via direct SQL.
 - **No "blocks vs. blocked-by" semantics in the schema.** The model uses a single edge type (predecessor → successor); finish-to-start is implied. If a future task ever wants start-to-start or finish-to-finish dependency types, that would need a `dependency_type` column. Not a current concern for MVP.
 - **`Instant` vs `OffsetDateTime` for `createdAt`.** `Comment` uses `OffsetDateTime`; this entity uses `Instant`. Functionally equivalent (both round-trip through `TIMESTAMPTZ`), but worth normalizing later if the codebase standardizes on one. Not load-bearing for any current feature.
+
+## 2026-04-27 — TASK-067: Implement GET /api/projects/{projectId}/timeline
+
+### Files added
+
+- `backend/src/main/java/com/trackify/timeline/dto/TimelineTaskResponse.java` — record with `id`, `title`, `status`, `priority`, `startDate`, `dueDate` (both `LocalDate`, matching `Task` entity). No description, no comments, no sort-order — Gantt-only fields.
+- `backend/src/main/java/com/trackify/timeline/dto/TimelineResponse.java` — top-level record with `projectId` and `List<TimelineTaskResponse> tasks`. No dependency edges (deferred to TASK-073).
+- `backend/src/main/java/com/trackify/timeline/application/TimelineService.java` — `@Transactional(readOnly = true)`. Delegates authorization to `ProjectQueryService.getById` (same pattern as `BoardQueryService`). Loads tasks via the existing `TaskRepository.findByProjectIdOrderByColumnIdAscSortOrderAsc` — no new finder needed. Maps to `TimelineResponse`.
+- `backend/src/main/java/com/trackify/timeline/controller/TimelineController.java` — thin `@RestController`. `GET /api/projects/{projectId}/timeline`. Resolves `@AuthenticationPrincipal LocalUserPrincipal`, delegates to `TimelineService`. No business logic.
+- `backend/src/test/java/com/trackify/timeline/controller/TimelineControllerTest.java` — 5 `@WebMvcTest` cases: happy path (verifies `id`, `title`, `startDate`, `dueDate` in JSON), empty project, non-member → 403 with error envelope, missing project → 404, unauthenticated → 401.
+
+### Key design decisions
+
+- **Authorization mirrors `BoardQueryService` exactly.** `TimelineService.getTimeline` calls `projectQueryService.getById(projectId, userId)` before loading tasks. Throws `NotFoundException` (404) for missing project, `ForbiddenException` (403) for non-member. No new authorization mechanism invented.
+- **Reused `TaskRepository` finder.** `findByProjectIdOrderByColumnIdAscSortOrderAsc` already existed from the board read path. No new finder added — TASK-073 will add `findByPredecessorTaskIdIn` when the dependency fan-out actually needs it.
+- **`LocalDate` used for `startDate`/`dueDate`.** The `Task` entity stores these as `LocalDate`; no conversion needed. Jackson serializes them as `"2026-04-01"` strings, which is what the Gantt chart library expects.
+- **Separate `TimelineTaskResponse` rather than reusing `TaskResponse`.** `TaskResponse` carries `description`, `columnId`, `createdBy`, `estimatedHours`, `sortOrder`, `createdAt`, `updatedAt` — none of which the Gantt needs. A tight DTO keeps the response compact and the timeline contract independent of task-level field evolution.
+- **No `timeline/domain/` or `timeline/infrastructure/`.** Timeline is a pure read model. It owns no entities and no repositories — only `controller/`, `application/`, and `dto/`.
+
+### What was tested
+
+- `./mvnw -f backend compile test-compile` — BUILD SUCCESS (22 source files compiled).
+- `./mvnw -f backend test` — **88 tests, 0 failures, 0 errors. BUILD SUCCESS.** (Previous baseline: 83 tests; 5 new TimelineControllerTest cases.)
+
+### Follow-up notes for TASK-068 (frontend timeline query layer)
+
+- Endpoint: `GET /api/projects/{projectId}/timeline` — no query params needed for the read path.
+- Response shape: `{ projectId: string, tasks: Array<{ id: string, title: string, status: string, priority: string, startDate: string | null, dueDate: string | null }> }`.
+- `startDate` and `dueDate` may be `null` (task entity fields are nullable). The Gantt library must handle null bars — check `gantt-task-react` docs for how it handles tasks without dates.
+- Create `timelineApi.getTimeline(projectId)` in `frontend/src/modules/gantt/api/` (or `timeline/`) calling `httpClient.get(...)`.
+- TanStack Query key: `['projects', projectId, 'timeline']` — invalidate when a task schedule changes (TASK-068 scope).
+
+### Follow-up notes for TASK-073 (dependencies in timeline payload)
+
+- Add `findByPredecessorTaskIdIn(List<UUID> taskIds)` to `TaskDependencyRepository`. Returns all edges where the predecessor is any task in the project. One query instead of N.
+- In `TimelineService.getTimeline`: after loading tasks, extract task ids, call the new finder, group edges by predecessor, inject into `TimelineTaskResponse` (which will need a `List<UUID> successorIds` or similar field).
+- `TimelineResponse` and `TimelineTaskResponse` are records — adding a field to `TimelineTaskResponse` is a non-breaking change to the JSON contract (additive). The frontend can ignore the new field until TASK-068/timeline-UI task consumes it.
+
+### Follow-up risks
+
+- **Null dates not validated at read time.** Tasks without `startDate` or `dueDate` serialize as JSON `null`. The Gantt library (`gantt-task-react`) may render such tasks oddly or throw. The frontend must guard against null dates before passing rows to the chart.
+- **Sort order in timeline payload.** Currently tasks are ordered by `(column_id, sort_order)` — that's the board order, not a natural Gantt order. Gantt order is typically by `startDate`. The frontend should re-sort by `startDate` before rendering, or TASK-073/timeline-UI can request a different sort. No schema change needed; just a different `ORDER BY` in the query if desired.
