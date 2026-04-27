@@ -1664,4 +1664,32 @@ Follow-up risk / notes for TASK-050+:
 - The board page does not yet open a task drawer on card click — TASK-053/054 will add `taskId` URL state and the drawer; the natural place is to add an `onClick` to the `TaskCard` wrapper (or wrap it in a button) that pushes `?taskId=...` into the URL.
 - TASK-051 needs a "create task" control on the board; the column header is the obvious place to put a small "+ Add task" button.
 - TASK-058 (DnD) will need to pass drag handlers down through `BoardColumnView` to the cards. Both component signatures are tiny (`{ column }` and `{ task }`), so adding optional props for DnD context will be additive and non-breaking.
+
+## 2026-04-27 — TASK-050: Implement POST /api/projects/{projectId}/tasks
+
+Files added:
+- `backend/src/main/java/com/trackify/task/dto/CreateTaskRequest.java` — request record. Fields: `title` (@NotBlank, @Size(max=255)), `description` (nullable), `priority` (nullable, service-validated), `startDate`, `dueDate`. No `status`, `columnId`, `sortOrder`, or `estimatedHours` — all resolved by the service.
+- `backend/src/main/java/com/trackify/task/dto/TaskResponse.java` — full task shape record. Fields: `id, projectId, columnId, createdBy, title, description, status, priority, sortOrder, startDate, dueDate, estimatedHours, createdAt, updatedAt`. Reusable by TASK-052 (task detail).
+- `backend/src/main/java/com/trackify/task/application/TaskCommandService.java` — @Service, @Transactional. `createTask(projectId, userId, request)`: (1) delegates authorization to `ProjectQueryService.getById`; (2) loads columns via `BoardColumnRepository.findByProjectIdOrderByPositionAsc`, picks index 0 (the seeded "Todo"); (3) computes `sortOrder = max + 1.0` via new `TaskRepository` finder, or 0.0 for empty column; (4) validates/defaults priority via private `resolvePriority`; (5) saves `Task`, returns `TaskResponse`.
+- `backend/src/main/java/com/trackify/task/controller/TaskController.java` — @RestController, @RequestMapping("/api/projects"). `POST /{projectId}/tasks` with @Valid @RequestBody, @AuthenticationPrincipal. Returns HTTP 201.
+- `backend/src/test/java/com/trackify/task/controller/TaskControllerTest.java` — @WebMvcTest with 7 test methods: happy-path (201 + full body + service.verify), empty-title (400 VALIDATION_FAILED), forbidden (403), not-found (404), unauthenticated (401 + no service call), optional-fields-omitted (201), date serialization (startDate/dueDate as ISO strings).
+
+Files modified:
+- `backend/src/main/java/com/trackify/task/infrastructure/TaskRepository.java` — added `findTopByColumnIdOrderBySortOrderDesc(UUID columnId) -> Optional<Task>`. Derived-query finder preferred over @Query(MAX): Spring Data generates ORDER BY sort_order DESC LIMIT 1, which avoids a separate aggregation projection.
+- `backend/src/main/java/com/trackify/common/exception/GlobalExceptionHandler.java` — added `@ExceptionHandler(IllegalArgumentException.class)` mapping to HTTP 400 / "BAD_REQUEST". Required because `resolvePriority` throws `IllegalArgumentException` for invalid priority values and the existing handler had no explicit mapping (would fall through to the 500 generic handler).
+
+Design decisions:
+- Priority validation is service-layer (private `resolvePriority`), not a custom constraint annotation. Validates against `Set.of("LOW","MEDIUM","HIGH","URGENT")` in uppercase; throws `IllegalArgumentException` which is now mapped to 400.
+- Default column = first by `position` — consistent with the seed order in TASK-045 (position 0 = "Todo"). No string-match on column name; position 0 is the structural contract.
+- `TaskCommandService` directly cross-imports `BoardColumnRepository`. This is a deliberate intra-monolith dependency: the task module needs to resolve the default column without going through the board module's application service (which is read-only). Architecture.md §12 says board/timeline must not bypass task's services; the converse is allowed.
+- `estimatedHours` set to null for this task; out of scope per instructions.
+
+What was tested:
+- `mvn compile test-compile`: BUILD SUCCESS, 99 main sources + 16 test sources.
+- `mvn test`: BUILD SUCCESS, **54 tests run, 0 failures, 0 errors** (was 47 before; +7 in TaskControllerTest). All pre-existing tests still pass.
+
+Follow-up risk / notes:
+- TASK-051 (UI task-create control) can now call POST /api/projects/{id}/tasks. The response shape is in `TaskResponse.java`.
+- TASK-052 (task detail) can reuse `TaskResponse` and the `TaskCommandService` pattern for updates.
+- Priority accept-list is case-insensitive (uppercased before check) but the value stored is the uppercased form. Clients should send uppercase; lowercase is tolerated silently.
 - The two pre-existing routes.tsx lint errors are unrelated and out of scope for TASK-049. They should be addressed in a polish task (TASK-080 or similar) by extracting the `RequireAuth` / `PublicOnly` wrappers into their own files.
