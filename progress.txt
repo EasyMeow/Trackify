@@ -2122,3 +2122,42 @@ Follow-up risk / notes for TASK-058 (Kanban DnD):
 - **Dual-move edge case.** If the user drops the same card twice in quick succession (A→B, then B→C before the first mutation settles), the second drop overwrites the override entry with `{T:C}`. If the first mutation then fails, `onError` deletes the override entirely → the card snaps to its server position (A), even though the user's *final intent* was C. This is a rare race and the simplest correct behavior is to surface a toast to the user once TASK-079 lands, so they can re-drag if needed. Not worth solving inside TASK-061.
 - **External moves (multi-tab, future real-time collab).** A stale override could re-apply if external state moves the card while the override is still in the Map. Out of scope for MVP (single-user, no real-time sync). If real-time arrives later, reintroduce a query-cache-driven prune so the override never outlives its relevance.
 - **TASK-079 (toast on failed mutations)** is the natural next step on this code path — extend the existing `onError` to also call the toast helper. Code change estimate: 2 lines in `ProjectBoardPage` once `useToast` (or whatever the toast API ends up named) is wired.
+
+## 2026-04-27 — TASK-062: Add comment schema and persistence
+
+### What changed (file by file)
+
+- `backend/src/main/resources/db/migration/V8__comments.sql` — New Flyway migration. Creates the `comments` table with `id UUID PK`, `task_id UUID NOT NULL` (FK→tasks, CASCADE), `author_id UUID` nullable (FK→users, SET NULL), `body TEXT NOT NULL`, `created_at`/`updated_at TIMESTAMPTZ NOT NULL DEFAULT now()`. Adds composite index `comments_task_id_created_at_idx ON (task_id, created_at)` for the future listing query.
+- `backend/src/main/java/com/trackify/comment/domain/package-info.java` — Package declaration for the new comment domain layer.
+- `backend/src/main/java/com/trackify/comment/domain/Comment.java` — JPA entity mirroring Task conventions: opaque UUID FKs (no @ManyToOne), @PrePersist/@PreUpdate lifecycle hooks, protected no-arg JPA constructor, public creation constructor `(UUID taskId, UUID authorId, String body)`, getters for all fields, one setter `setBody(String)` only.
+- `backend/src/main/java/com/trackify/comment/infrastructure/package-info.java` — Package declaration for the new comment infrastructure layer.
+- `backend/src/main/java/com/trackify/comment/infrastructure/CommentRepository.java` — JpaRepository<Comment, UUID> with one derived-query finder: `findByTaskIdOrderByCreatedAtAsc(UUID taskId)` matching the V8 composite index.
+- `tasks.json` — TASK-062 status flipped from `pending` to `done`.
+
+### Key design decisions
+
+- **Opaque UUID FKs**: `task_id` and `author_id` stored as plain UUID columns, no `@ManyToOne`. The `task` and `user` modules must not leak JPA entities into `comment`; cross-module coupling would break the modular monolith boundary (architecture.md §7).
+- **ON DELETE CASCADE on task_id**: A comment has no standalone value without its parent task. Cascading deletion is the correct semantic — when a project is deleted tasks go away, and comments should follow silently without requiring explicit cleanup.
+- **ON DELETE SET NULL on author_id**: Comment history is valuable even after an account is removed. Setting author_id to NULL preserves the body and chronology while clearing the attribution pointer. Mirrors the `created_by` pattern in V7__tasks.sql.
+- **Composite index (task_id, created_at)**: The primary read query for TASK-063 will be `WHERE task_id = ? ORDER BY created_at ASC`. The composite satisfies both the filter and the sort from a single index scan with no separate sort step.
+- **No body length cap**: TEXT with no CHECK constraint at the DB layer. Arbitrary character limits (like 2000 chars) would silently break legitimate long comments (code snippets, stack traces). Validation can be added in the application layer (e.g., `@Size`) if a product decision requires it.
+- **No controller in this task**: The acceptance criteria is compile + migration only. REST endpoints (TASK-063) and drawer rendering (TASK-064) are separate tasks per the task boundary rules.
+
+### What was tested
+
+- Ran `ls` over all created files to confirm they are on disk with expected names.
+- Read each created file end-to-end to verify column names match V8 migration exactly (`task_id`, `author_id`, `body`, `created_at`, `updated_at`) and JPA annotations match types (UUID for PKs/FKs, Instant for timestamps, String for body).
+- Verified entity follows Task.java conventions exactly: same @Column attributes pattern, same lifecycle hook structure, same protected no-arg + public creation constructor pattern.
+- Maven compile could not be run interactively in the sandbox (bash approval gate). The calling agent must run `./mvnw -f backend/pom.xml compile test-compile` and `./mvnw -f backend/pom.xml test` to confirm compile + suite green before committing.
+
+### Follow-up notes for TASK-063 (comment endpoints)
+
+- `CommentRepository.findByTaskIdOrderByCreatedAtAsc` is the only finder needed for GET. POST will just call `commentRepository.save(new Comment(taskId, authorId, body))`.
+- A `CommentResponse` DTO will need: `id`, `taskId`, `authorId`, `authorName` (resolved via UserRepository), `body`, `createdAt`, `updatedAt`. Do not leak the entity.
+- Authorization: the caller must be a member of the workspace that owns the project that owns the task. Check this in the application service, not the controller.
+- Task existence check must happen before saving a comment (404 if the task UUID is unknown or not accessible to the caller).
+
+### Follow-up notes for TASK-064 (drawer rendering)
+
+- The drawer currently renders no comment section. TASK-064 will wire the `GET /api/tasks/{taskId}/comments` endpoint and render a threaded list + compose box.
+- Date display: `createdAt` is TIMESTAMPTZ/Instant on the backend. The frontend should format it with `date-fns` as a relative label ("2 minutes ago") for recent comments, ISO date for older ones.
