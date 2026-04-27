@@ -2371,3 +2371,45 @@ Modified:
 
 - **Null dates not validated at read time.** Tasks without `startDate` or `dueDate` serialize as JSON `null`. The Gantt library (`gantt-task-react`) may render such tasks oddly or throw. The frontend must guard against null dates before passing rows to the chart.
 - **Sort order in timeline payload.** Currently tasks are ordered by `(column_id, sort_order)` — that's the board order, not a natural Gantt order. Gantt order is typically by `startDate`. The frontend should re-sort by `startDate` before rendering, or TASK-073/timeline-UI can request a different sort. No schema change needed; just a different `ORDER BY` in the query if desired.
+
+## 2026-04-27 — TASK-068: Add frontend timeline query layer
+
+### Files added
+
+- `frontend/src/modules/gantt/types/timeline.ts` — `TimelineTask` and `TimelineResponse` DTOs matching the backend contract from TASK-067 (`{ projectId, tasks: [{ id, title, status, priority, startDate, dueDate }] }`). Re-exports `TaskStatus`/`TaskPriority` from `kanban/types/board` rather than duplicating them, mirroring how `kanban/types/task.ts` re-exports shared enums.
+- `frontend/src/modules/gantt/api/timelineApi.ts` — `timelineApi.getTimeline(projectId)` calling `httpClient.get('/projects/{id}/timeline')`. Mirrors `boardApi.getBoard` exactly.
+- `frontend/src/modules/gantt/hooks/useProjectTimeline.ts` — `useProjectTimeline(projectId)` TanStack Query hook. Query key `['projects', projectId, 'timeline']` matches the convention in `useBoardQuery` (`['projects', projectId, 'board']`). `enabled: Boolean(projectId)` guards the undefined-route case.
+
+### Files modified
+
+- `frontend/src/pages/ProjectTimelinePage.tsx` — replaced placeholder with a real call to `useProjectTimeline`. Renders "Loading…" while fetching, then a task-count placeholder ("N task(s). Gantt view lands in TASK-069."). Deliberately stops short of rendering the actual Gantt — that's TASK-069's scope.
+
+### Key design decisions
+
+- **Mirror the kanban module exactly.** `kanban/` is the established read-model layer pattern in this repo (TASK-048). File layout (`api/`, `hooks/`, `types/`), naming (`xApi`, `useX`), TanStack Query key shape (`['projects', projectId, 'board']`), and the `enabled: Boolean(projectId)` guard are all copied 1:1. No invented patterns.
+- **Types live in `modules/gantt/types/timeline.ts`, not co-located with the API.** Mirrors `kanban/types/board.ts`. The `gantt` folder already had an empty `types/` slot so this is the obvious home.
+- **`startDate`/`dueDate` typed as `string | null`.** Backend serializes `LocalDate` as `"2026-04-27"` strings. Keeping them as strings here defers `Date` parsing until the actual Gantt library needs it (TASK-069). Null is preserved so the consumer can decide how to handle dateless tasks (Gantt library may need them filtered out before render — see follow-up risk in TASK-067 notes).
+- **`ProjectTimelinePage.tsx` calls the hook for real.** The acceptance criterion says "the timeline page imports the hook" and the test step says `npm run build`. A bare import would be tree-shaken out, so the page actually consumes the hook's return value — this also gives TASK-069 a working starting point.
+- **No mutation hooks added.** `kanban` has `useCreateTask` and `useMoveTask`. Timeline has no mutations yet — schedule mutations are TASK-070/071. Don't preemptively scaffold them.
+
+### What was tested
+
+- `cd frontend && npm run build` — exit 0. tsc clean, vite built (422 modules, 419.76 kB / 129.51 kB gzip). One new module added vs the previous 421-module baseline.
+- `cd frontend && npm run lint` — 2 pre-existing `react-refresh/only-export-components` errors in `src/app/routes.tsx`. **Zero new errors introduced.**
+- Confirmed `ProjectTimelinePage.tsx` line 2 imports `useProjectTimeline` and line 6 calls it.
+
+### Follow-up notes for TASK-069 (read-only Gantt view)
+
+- The hook returns `{ data, isLoading, error }`. TASK-069 should branch on all three. The current page only handles `isLoading` and `data` — error state will need a small block (TASK-078 will standardize empty/error states across screens, so don't over-build it here).
+- `gantt-task-react` expects `Date` objects, not ISO strings. TASK-069 will need a mapping step that converts each `TimelineTask` to the library's `Task` shape (likely `{ start: Date, end: Date, name: string, id: string, type: 'task', progress: 0 }` — verify against the library's actual API before writing).
+- Tasks with `startDate === null` or `dueDate === null` cannot be rendered as bars. Choices: (a) filter them out, (b) show them in a sidebar list, (c) default to today/+1d. Spec is silent — easiest is to filter and surface the count separately so the user notices missing dates.
+- Query invalidation: when TASK-070/071 ship `PATCH /api/tasks/{id}/schedule`, the mutation hook must invalidate `['projects', projectId, 'timeline']` on success (and likely `['projects', projectId, 'board']` too, since priority/dates show on cards).
+
+### Follow-up notes for TASK-073 (dependencies in timeline payload)
+
+- When the backend adds dependency edges to `TimelineResponse`, this module's types and API helper need updating. The likely shape is either: (a) extend `TimelineTask` with `successorIds: string[]` (per-task fan-out), or (b) add `dependencies: Array<{ predecessorId, successorId }>` at the top level. Wait for the backend's actual choice in TASK-073 — don't pre-shape it.
+
+### Follow-up risks
+
+- **No error UI.** The hook's `error` state is silently swallowed. If `/api/projects/{id}/timeline` 403s or 500s, the page just stays on "Loading…" → "0 task(s)" forever. Acceptable for now because the task scope is "import the hook"; TASK-078 will add proper loading/empty/error states across all core screens.
+- **Re-export of `TaskStatus`/`TaskPriority` couples gantt to kanban.** If kanban's enum values ever diverge from what timeline returns (unlikely — backend uses one `Task.status` field), this re-export becomes a lie. Acceptable because both views are over the same `Task` entity per architecture.md §10. If a future refactor splits the enums per view, this re-export should be replaced with a dedicated copy.
