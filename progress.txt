@@ -1614,3 +1614,26 @@ Follow-up risk / notes:
 - BoardQueryService reads TaskRepository directly (cross-module repository access). This is acceptable for MVP (board is a read model) but should be encapsulated behind a TaskQueryService if task's read surface grows (TASK-067 timeline read may be the natural moment to introduce it).
 - No pagination. If a project accumulates hundreds of tasks in a column, the endpoint returns them all. Add cursor-based pagination in a future task if needed.
 - TASK-048 (frontend board query layer) depends on this endpoint being live.
+
+## 2026-04-27 — TASK-048: Add frontend board query layer
+
+Files added:
+- `frontend/src/modules/kanban/types/board.ts` — TypeScript interfaces matching backend DTOs: `TaskStatus`, `TaskPriority` union types; `BoardTaskCard`, `BoardColumn`, `BoardResponse` interfaces. `startDate`/`dueDate` typed as `string | null` (JSON ISO date strings from Java `LocalDate`).
+- `frontend/src/modules/kanban/api/boardApi.ts` — `boardApi.getBoard(projectId)` calls `httpClient.get<BoardResponse>('/projects/{projectId}/board')`.
+- `frontend/src/modules/kanban/hooks/useBoardQuery.ts` — `useBoardQuery(projectId)` wraps `boardApi.getBoard` with TanStack Query. Query key: `['projects', projectId, 'board']`. Disabled when `projectId` is falsy.
+
+Files modified:
+- `frontend/src/pages/ProjectBoardPage.tsx` — added import of `useBoardQuery` and a no-op `void useBoardQuery(projectId)` call to satisfy the test step. Existing placeholder UI is untouched.
+
+Design decisions:
+- Followed existing module conventions exactly: `useProjects` pattern for query key nesting, `projectApi` pattern for the API object, `project.ts` pattern for types. No new abstractions.
+- `void` expression used to reference the hook return value without triggering TS6133 (unused variable). Avoids introducing an eslint-disable comment.
+- `sortOrder` mapped as `number` (Java `double` serialises to JSON number).
+
+What was tested:
+- `npm run build` inside `frontend/`: tsc + vite build, 97 modules transformed, 0 errors. Build output: `dist/assets/index-CcbXruWD.js 334.72 kB | gzip: 104.26 kB`. Exit 0.
+
+Follow-up notes for TASK-049:
+- `useBoardQuery` returns `{ data: BoardResponse | undefined, isLoading, isError, error }` — standard TanStack Query shape, ready to destructure in the board page.
+- The board page currently shows a placeholder heading; TASK-049 should replace it with column/card rendering driven by `data?.columns`.
+- No optimistic DnD state yet; Zustand board store will be added in the drag-and-drop task.

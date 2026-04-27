@@ -1,7 +1,9 @@
 import { useParams } from 'react-router-dom';
+import { useBoardQuery } from '../modules/kanban/hooks/useBoardQuery';
 
 export default function ProjectBoardPage() {
   const { projectId } = useParams<{ projectId: string }>();
+  void useBoardQuery(projectId);
   return (
     <section
       style={{
