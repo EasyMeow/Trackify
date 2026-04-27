@@ -55,7 +55,13 @@ const tasksListStyle: React.CSSProperties = {
   gap: 'var(--space-2)',
 };
 
-export function BoardColumnView({ column }: { column: BoardColumn }) {
+interface BoardColumnViewProps {
+  column: BoardColumn;
+  selectedTaskId?: string | null;
+  onSelectTask?: (id: string) => void;
+}
+
+export function BoardColumnView({ column, selectedTaskId, onSelectTask }: BoardColumnViewProps) {
   return (
     <div style={columnStyle}>
       <div style={headerStyle}>
@@ -67,7 +73,12 @@ export function BoardColumnView({ column }: { column: BoardColumn }) {
       ) : (
         <div style={tasksListStyle}>
           {column.tasks.map((task) => (
-            <TaskCard key={task.id} task={task} />
+            <TaskCard
+              key={task.id}
+              task={task}
+              isActive={task.id === selectedTaskId}
+              onSelect={onSelectTask}
+            />
           ))}
         </div>
       )}

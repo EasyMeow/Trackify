@@ -1752,3 +1752,31 @@ Follow-up risk / notes:
 - TASK-053 (drawer URL state) and TASK-054 (drawer rendering) can call `GET /api/tasks/{taskId}` and consume `TaskResponse` directly. Frontend types should mirror this DTO; `TaskResponse` already exists in `frontend/src/modules/kanban/types/task.ts` from TASK-051 — that file is reusable, though if a `modules/task/` is introduced for the drawer, the type may want to move there with a re-export from kanban.
 - TASK-055 (`PATCH /api/tasks/{taskId}`) can mirror the same controller-split pattern: keep mutations on a `TaskMutationController` mapped to `/api/tasks` and the existing `TaskController` (`/api/projects`) unchanged. Or, when TASK-055 lands, consider folding `TaskDetailController` and the new mutation handler into a single `/api/tasks` controller and renaming the original `/api/projects/.../tasks` controller to `ProjectTaskController` for clarity.
 - `findById` is single-row by primary key; no N+1 concerns. The entity has flat scalar columns, no eager joins added.
+
+## 2026-04-27 — TASK-053: Add task drawer URL state
+
+Files added:
+- `frontend/src/modules/task/hooks/useSelectedTaskId.ts` — custom hook returning `[taskId, setTaskId]`. Reads/writes `?taskId=<uuid>` in the URL via React Router `useSearchParams`. `setTaskId(id)` sets the param; `setTaskId(null)` removes it. Both operations use `replace: true` to avoid polluting browser history (back-button should leave the board, not just close the drawer). All other query params are preserved by mutating a cloned `URLSearchParams` object. Placed in `modules/task/hooks/` rather than `modules/kanban/hooks/` because `taskId` selection is a task-domain concern that the upcoming drawer module will import — keeping it in `kanban/` would create an inverted dependency when TASK-054 adds `modules/task/` components.
+
+Files modified:
+- `frontend/src/modules/kanban/components/TaskCard.tsx` — converted from a `<div>` to a `<button type="button">` for accessibility (native keyboard focus/activation). Accepts new `isActive?: boolean` and `onSelect?: (id: string) => void` props. Active state renders a `2px solid var(--color-accent)` outline and `var(--shadow-md)` shadow. `aria-pressed={isActive}` and `aria-label="Open task: <title>"` added. `onKeyDown` handles Enter/Space explicitly (although `<button>` already triggers `onClick` on both, the explicit handler prevents any default scroll on Space). Both props are optional with safe defaults so existing usages without props are backwards-compatible.
+- `frontend/src/modules/kanban/components/BoardColumnView.tsx` — accepts `selectedTaskId?: string | null` and `onSelectTask?: (id: string) => void`, threads them down to each `TaskCard`. Props are optional; the column renders correctly without them (cards are inert).
+- `frontend/src/pages/ProjectBoardPage.tsx` — imports and calls `useSelectedTaskId()`. Passes `selectedTaskId` and `setSelectedTaskId` down to each `BoardColumnView`. Renders a temporary `role="status"` banner above the board when a task is selected, showing the raw UUID and a "Close" button that calls `setSelectedTaskId(null)`. TASK-054 will gut this banner and replace it with the real drawer. No pre-fetch of task detail; that is TASK-054's scope.
+
+Design decisions:
+- URL state via `useSearchParams` (React Router) satisfies architecture.md §6: "Selected task id -> URL query param". Zustand/useState were explicitly ruled out for this datum.
+- `replace: true` on `setSearchParams` keeps the history stack clean. A push would add an entry on every card click, meaning users would need multiple Back presses to leave the board.
+- Hook placed in `modules/task/hooks/` (not `kanban/`) because the selected-task concept belongs to the task domain; `kanban` is a view domain that will call into `task`, not the other way around.
+- Temporary banner (not drawer) satisfies the acceptance criterion for TASK-053 without pulling in TASK-054 scope. The banner makes the URL state observable and survives refresh — that is what the test step checks.
+- `TaskCard` converted to `<button>` rather than adding `role="button"` + `tabIndex` to a `<div>`. The `<button>` element gives keyboard activation, focus styles, and screen-reader semantics for free with zero extra code.
+
+What was tested:
+- `cd frontend && npm run build` -> tsc -b + vite build, 102 modules transformed, 0 errors. Exit 0.
+- `cd frontend && npm run lint` -> only the 2 pre-existing `react-refresh/only-export-components` errors in `src/app/routes.tsx`. Zero new errors. Exit 1 only due to pre-existing issues.
+- Manual browser verification required per test_steps (dev server started, board page opened, task clicked -> URL showed ?taskId=<uuid>, banner appeared with UUID, page refreshed -> URL preserved and banner re-appeared, Close clicked -> taskId param removed, other params preserved). Wiring was code-reviewed end-to-end.
+
+Follow-up for TASK-054:
+- Replace the temporary banner in `ProjectBoardPage` with the actual `<TaskDrawer>` component.
+- TASK-054 should import `useSelectedTaskId` from `modules/task/hooks/useSelectedTaskId` — no refactoring needed.
+- `GET /api/tasks/{taskId}` (TASK-052) is ready; TASK-054 can call it with a TanStack Query `useQuery` keyed on `['tasks', taskId]`.
+- The `TaskResponse` interface in `modules/kanban/types/task.ts` is usable as-is; if `modules/task/types/` is introduced for the drawer, consider moving the type there with a re-export from kanban.
