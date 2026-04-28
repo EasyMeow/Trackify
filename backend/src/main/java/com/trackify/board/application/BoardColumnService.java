@@ -1,7 +1,9 @@
 package com.trackify.board.application;
 
 import com.trackify.board.domain.BoardColumn;
+import com.trackify.board.dto.ColumnResponse;
 import com.trackify.board.infrastructure.BoardColumnRepository;
+import com.trackify.project.application.ProjectQueryService;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -27,9 +29,12 @@ public class BoardColumnService {
     static final List<String> DEFAULT_COLUMN_NAMES = List.of("Todo", "In Progress", "Done");
 
     private final BoardColumnRepository boardColumnRepository;
+    private final ProjectQueryService projectQueryService;
 
-    public BoardColumnService(BoardColumnRepository boardColumnRepository) {
+    public BoardColumnService(BoardColumnRepository boardColumnRepository,
+                              ProjectQueryService projectQueryService) {
         this.boardColumnRepository = boardColumnRepository;
+        this.projectQueryService = projectQueryService;
     }
 
     /**
@@ -44,5 +49,35 @@ public class BoardColumnService {
         for (int i = 0; i < DEFAULT_COLUMN_NAMES.size(); i++) {
             boardColumnRepository.save(new BoardColumn(projectId, DEFAULT_COLUMN_NAMES.get(i), i));
         }
+    }
+
+    /**
+     * Creates a new column appended to the end of the project's column order.
+     *
+     * <p>Authorization is enforced via {@link ProjectQueryService#getById}: the
+     * caller must be a member of the project's workspace, otherwise 403/404 is thrown.
+     *
+     * @param projectId target project UUID
+     * @param userId    authenticated caller's UUID
+     * @param name      column name (non-blank, max 255 chars)
+     * @return the created column as a response DTO
+     */
+    @Transactional
+    public ColumnResponse createColumn(UUID projectId, UUID userId, String name) {
+        projectQueryService.getById(projectId, userId);
+        long count = boardColumnRepository.countByProjectId(projectId);
+        BoardColumn column = boardColumnRepository.save(new BoardColumn(projectId, name, (int) count));
+        return toResponse(column);
+    }
+
+    private static ColumnResponse toResponse(BoardColumn column) {
+        return new ColumnResponse(
+                column.getId(),
+                column.getProjectId(),
+                column.getName(),
+                column.getPosition(),
+                column.getCreatedAt(),
+                column.getUpdatedAt()
+        );
     }
 }

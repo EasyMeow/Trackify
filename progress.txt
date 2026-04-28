@@ -3702,3 +3702,23 @@ What was tested:
 Follow-up risk:
 - The overlay click-outside handler closes the modal even during a pending deletion — that's acceptable since the mutation is in-flight and the UI shows "Deleting…" state, which prevents double-submission.
 - TASK-098 (POST /api/projects/{projectId}/columns) is next.
+
+## 2026-04-28 — TASK-098: POST /api/projects/{projectId}/columns
+
+What changed:
+- `board/dto/CreateColumnRequest.java` (new): validated request record with `@NotBlank @Size(max=255) String name`.
+- `board/dto/ColumnResponse.java` (new): response record with id, projectId, name, position, createdAt, updatedAt.
+- `board/infrastructure/BoardColumnRepository`: added `countByProjectId(UUID)` query method.
+- `board/application/BoardColumnService`: added `ProjectQueryService` constructor dependency; added `createColumn(UUID projectId, UUID userId, String name)` — enforces access via `projectQueryService.getById`, computes next position via `countByProjectId`, saves and returns `ColumnResponse`.
+- `board/controller/ColumnController.java` (new): `POST /api/projects/{projectId}/columns` → 201 + Location header + ColumnResponse body.
+- Updated `BoardColumnServiceTest` to pass the new `ProjectQueryService` mock to the constructor.
+- `board/controller/ColumnControllerTest.java` (new): 5 tests — happy path (201 + Location), 404, 403, 400 (blank name), 401.
+
+What was tested:
+- `./mvnw compile test-compile` — clean.
+- `./mvnw test` — 140 tests, 0 failures, BUILD SUCCESS.
+- ColumnControllerTest: 5/5 pass.
+
+Follow-up risk:
+- `createColumn` uses `count()` for position — correct as long as positions stay contiguous (0..n-1). If a future delete endpoint leaves gaps it may produce duplicates. The reorder endpoint (TASK-101) will normalise positions anyway.
+- TASK-099 (rename column) is next.

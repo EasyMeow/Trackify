@@ -15,5 +15,7 @@ public interface BoardColumnRepository extends JpaRepository<BoardColumn, UUID> 
 
     List<BoardColumn> findByProjectIdOrderByPositionAsc(UUID projectId);
 
+    long countByProjectId(UUID projectId);
+
     void deleteByProjectId(UUID projectId);
 }
