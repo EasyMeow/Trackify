@@ -7,6 +7,7 @@ import ProjectBoardPage from '../pages/ProjectBoardPage';
 import ProjectSettingsPage from '../pages/ProjectSettingsPage';
 import ProjectTimelinePage from '../pages/ProjectTimelinePage';
 import SignInPage from '../pages/SignInPage';
+import SignUpPage from '../pages/SignUpPage';
 
 function AuthLayoutRoute() {
   return (
@@ -31,7 +32,10 @@ function AppShellRoute() {
 export const router = createBrowserRouter([
   {
     element: <AuthLayoutRoute />,
-    children: [{ path: '/sign-in', element: <SignInPage /> }],
+    children: [
+      { path: '/sign-in', element: <SignInPage /> },
+      { path: '/sign-up', element: <SignUpPage /> },
+    ],
   },
   {
     element: <AppShellRoute />,

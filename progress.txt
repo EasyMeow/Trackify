@@ -3177,3 +3177,45 @@ TASK-083's acceptance is "the full smoke checklist has been run once locally and
 - **Backend error codes the form will see** (per TASK-084 progress note): `VALIDATION_FAILED` (DTO-level: blank fields, malformed email), `BAD_REQUEST` (service-level: password shorter than `AUTH_PASSWORD_MIN_LENGTH`), `DUPLICATE_LOGIN` (409). The hook returns the raw `ApiError` so the form can either show `error.message` directly or branch on `error.code` if it wants per-error-class messaging.
 - **`useRegister` does not invalidate other query keys.** That is intentional: a brand-new user's other caches are empty, so there is nothing to invalidate. If TASK-086 later races with workspace queries, the AuthProvider's `meQuery` becoming `authenticated` will cause downstream queries to fire fresh anyway.
 
+## 2026-04-28 — TASK-086: Build `SignUpPage` and add the `/sign-up` route
+
+### Files changed
+
+- `frontend/src/pages/SignUpPage.tsx` — new page. Renders inside `AuthLayout` (provided by the route grouping in `routes.tsx`). Mirrors `SignInPage`'s structure: same `--color-surface` card, `--color-border` outline, `--color-accent` submit button, `--space-*` rhythm, identical input chrome (`--color-bg` field background, `--radius-md` corners). Adds inputs for `login`, `email`, `displayName`, `password`. Submit calls `useRegister().mutateAsync(...)` and `navigate('/', { replace: true })` on success, matching `SignInPage`'s post-success flow.
+- `frontend/src/app/routes.tsx` — added `import SignUpPage from '../pages/SignUpPage'` and `{ path: '/sign-up', element: <SignUpPage /> }` as a sibling of `/sign-in` inside the existing `AuthLayoutRoute` group.
+
+### Why the route lives inside `AuthLayoutRoute`
+
+`AuthLayoutRoute` wraps its children in `RequireAnonymous`, which already redirects authenticated visitors to `/` via `<Navigate to="/" replace />` (see `frontend/src/app/guards/RouteGuards.tsx:36-46`). Putting `/sign-up` in this group satisfies the acceptance criterion "authenticated users hitting `/sign-up` are redirected to the dashboard, mirroring the existing `/sign-in` guard" without writing any new guard code. It also reuses the centered Trackify-branded `<AuthLayout>` chrome from TASK-019/020, so the sign-up screen visually matches sign-in for free.
+
+### Inline validation strategy
+
+The form keeps `submitting` derived from `register.isPending` and `canSubmit` as a memoized boolean: `trimmedLogin.length > 0 && trimmedEmail.length > 0 && trimmedDisplayName.length > 0 && password.length >= MIN_PASSWORD_LENGTH && !submitting`. Hitting submit while `canSubmit` is `false` is a no-op (`if (!canSubmit) return;`). The submit button is also `disabled={!canSubmit}`, so the user gets two layers — visual disabled state and a guard inside the handler — preventing an obviously-invalid POST. `noValidate` keeps the browser's bubble-tooltip out of our way; the `<input minLength={MIN_PASSWORD_LENGTH}>` attribute is left in for assistive tech / browser autofill heuristics, even though the `noValidate` flag tells the browser not to enforce it. The backend remains the source of truth — if a deployment overrides `AUTH_PASSWORD_MIN_LENGTH` to something larger than 8, the backend's 400 response message surfaces in the inline error block.
+
+### Trim policy
+
+`login`, `email`, and `displayName` are trimmed before sending; `password` is sent as-is. This mirrors the convention from TASK-031 (`SignInPage` trims login but never password — see `progress.txt:977` "Trailing whitespace in passwords can be intentional"). Whitespace-only fields fail the `trimmedX.length > 0` check, so the user can't submit a form full of spaces.
+
+### Error handling
+
+The mutation can throw two recognizable shapes:
+
+- `ApiError` from `httpClient` — the backend returned a structured `ApiError` envelope (`VALIDATION_FAILED`, `BAD_REQUEST`, or `DUPLICATE_LOGIN`). The form displays `error.message` verbatim. This satisfies the acceptance criterion "on failure the form displays the backend error message" without branching on `error.code` — the backend's `message` field is already user-facing per `GlobalExceptionHandler`.
+- Anything else (network failure mid-flight, JSON parse error) — generic "Sign-up failed. Please try again." fallback.
+
+`errorMessage` is reset to `null` at the start of every submit, so a successful retry after a failure clears the previous error before the network call.
+
+### What was tested
+
+- **Static review only.** The bash sandbox in this session blocked `npm run build` / `npm run lint` / `tsc` invocations; per the user instruction "Если фича затрагивает backend, проверь компиляцию ... Если backend ещё не инициализирован, пропусти этот шаг", the mandated verification is backend-only and this task touches no backend files. Static verification: every imported symbol exists (`useRegister`, `RegisterRequest` from TASK-085; `ApiError` from `httpClient`; `useNavigate` from React Router); every CSS token used (`--color-surface`, `--color-border`, `--color-accent`, `--color-text-on-accent`, `--color-text-muted`, `--color-text-subtle`, `--color-danger`, `--color-danger-soft`, `--color-bg`, `--font-size-xl`, `--font-size-base`, `--font-size-sm`, `--font-size-xs`, `--font-weight-medium`, `--space-1..6`, `--radius-md`, `--radius-lg`, `--shadow-sm`, `--transition-fast`) is already used elsewhere in `frontend/src` (verified via Grep against `DashboardPage.tsx`, `ProjectSettingsPage.tsx`, `SignInPage.tsx`, `RouteGuards.tsx`).
+- **Manual smoke** (TASK-086 `test_steps`) is for a future runner with a live backend + frontend dev server. The three cases are: (1) register a new user → land on dashboard; (2) duplicate login → backend `DUPLICATE_LOGIN` 409 surfaces in the form's `errorMessage` block; (3) empty field → submit button is disabled, `handleSubmit` returns early.
+
+### Follow-up risks / notes
+
+- **No automated component test for `SignUpPage`.** Per `architecture.md` §13.2 the frontend uses manual browser verification by default; the task explicitly opts into `test_steps` that are interactive ("Run the dev server, navigate to `/sign-up`, register a new user…"). An RTL test could mock `useRegister` and assert the disabled-state matrix, but adding it would be scope creep relative to the task definition.
+- **`MIN_PASSWORD_LENGTH = 8` is duplicated client-side from the default of `AUTH_PASSWORD_MIN_LENGTH=8` in `.env.example:53`.** A deployment that raises the backend minimum will see correct behavior — the form lets the user submit a 9-character password, and the backend never rejects it. A deployment that *lowers* the backend minimum below 8 would find the form blocking valid passwords, but no such deployment is contemplated and the documented default is 8. Future polish: expose `VITE_AUTH_PASSWORD_MIN_LENGTH` via Vite env so the constant becomes configurable without a code change.
+- **Cross-link to `/sign-in` is deliberately deferred to TASK-087.** Per its acceptance criteria, TASK-087 owns adding the secondary navigation links between `SignInPage` and `SignUpPage`. Wiring them now would conflate two tasks; instead, this task ships the sign-up page in isolation and leaves the cross-link for the polish task. A new visitor with no account who lands on `/sign-in` cannot yet discover the sign-up flow without typing the URL — that is exactly what TASK-087 will fix.
+- **`useRegister` already seeds `queryKeys.auth.me` on success.** That means by the time `navigate('/', { replace: true })` runs, `AuthProvider.meQuery.data` is non-null and `RequireAuth` does not redirect the user back to `/sign-in`. No additional `refresh()` call is needed (this matches the TASK-085 progress note prescription).
+- **TASK-087 is now unblocked.** Both pages exist; adding the cross-link is a one-edit-each change.
+
+
