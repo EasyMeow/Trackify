@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   DndContext,
@@ -9,9 +9,14 @@ import {
   type DragStartEvent,
   type DragEndEvent,
 } from '@dnd-kit/core';
+import { SortableContext, arrayMove, horizontalListSortingStrategy } from '@dnd-kit/sortable';
 import { useBoardQuery } from '../modules/kanban/hooks/useBoardQuery';
 import { useCreateTask } from '../modules/kanban/hooks/useCreateTask';
 import { useMoveTask } from '../modules/kanban/hooks/useMoveTask';
+import { useCreateColumn } from '../modules/kanban/hooks/useCreateColumn';
+import { useRenameColumn } from '../modules/kanban/hooks/useRenameColumn';
+import { useDeleteColumn } from '../modules/kanban/hooks/useDeleteColumn';
+import { useReorderColumns } from '../modules/kanban/hooks/useReorderColumns';
 import { ProjectNav } from '../modules/project/components/ProjectNav';
 import { BoardColumnView } from '../modules/kanban/components/BoardColumnView';
 import { TaskCard } from '../modules/kanban/components/TaskCard';
@@ -108,7 +113,6 @@ type DragOverrides = Map<string, string>;
 function applyOverrides(serverColumns: BoardColumn[], overrides: DragOverrides): BoardColumn[] {
   if (overrides.size === 0) return serverColumns;
 
-  // Determine which taskIds actually moved to a different column
   const moved = new Map<string, { task: BoardTaskCard; toColId: string }>();
   for (const col of serverColumns) {
     for (const task of col.tasks) {
@@ -120,9 +124,7 @@ function applyOverrides(serverColumns: BoardColumn[], overrides: DragOverrides):
   }
 
   return serverColumns.map((col) => {
-    // Keep tasks not moved away from this column
     const remaining = col.tasks.filter((t) => !moved.has(t.id));
-    // Append tasks moved INTO this column
     const arrivals = [...moved.values()]
       .filter(({ toColId }) => toColId === col.id)
       .map(({ task }) => task);
@@ -130,38 +132,57 @@ function applyOverrides(serverColumns: BoardColumn[], overrides: DragOverrides):
   });
 }
 
+/** Apply column order override: reorder columns by the given id array. */
+function applyColumnOrder(columns: BoardColumn[], order: string[]): BoardColumn[] {
+  const map = new Map(columns.map((c) => [c.id, c]));
+  const ordered: BoardColumn[] = [];
+  for (const id of order) {
+    const col = map.get(id);
+    if (col) ordered.push(col);
+  }
+  // Append any columns not in the order array
+  for (const col of columns) {
+    if (!order.includes(col.id)) ordered.push(col);
+  }
+  return ordered;
+}
+
 export default function ProjectBoardPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const { data, isLoading, isError } = useBoardQuery(projectId);
   const [selectedTaskId, setSelectedTaskId] = useSelectedTaskId();
   const moveTask = useMoveTask(projectId);
+  const renameColumn = useRenameColumn(projectId);
+  const deleteColumn = useDeleteColumn(projectId);
+  const reorderColumns = useReorderColumns(projectId);
 
-  // Local DnD overrides — taskId → targetColumnId
-  // NOT stored in TanStack cache; cleared on next server refetch
   const [dragOverrides, setDragOverrides] = useState<DragOverrides>(new Map());
   const [activeTask, setActiveTask] = useState<BoardTaskCard | null>(null);
+  const [activeColumnId, setActiveColumnId] = useState<string | null>(null);
+  const [columnOrderOverride, setColumnOrderOverride] = useState<string[] | null>(null);
 
-  // Derive display columns from server data + local overrides.
-  // An override is naturally a no-op once server data agrees with it
-  // (see `applyOverrides`), so successful moves settle without flicker even
-  // though the override stays in the map. Stale entries get overwritten the
-  // next time the same card is moved, and `onError` deletes the entry to roll
-  // the card back to its server position when a move fails.
-  const displayColumns = useMemo<BoardColumn[]>(
-    () => (data ? applyOverrides(data.columns, dragOverrides) : []),
-    [data, dragOverrides]
-  );
+  const displayColumns = useMemo<BoardColumn[]>(() => {
+    if (!data) return [];
+    const withTaskOverrides = applyOverrides(data.columns, dragOverrides);
+    if (columnOrderOverride) {
+      return applyColumnOrder(withTaskOverrides, columnOrderOverride);
+    }
+    return withTaskOverrides;
+  }, [data, dragOverrides, columnOrderOverride]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
-      activationConstraint: {
-        // 8px movement threshold so clicks still fire the drawer
-        distance: 8,
-      },
+      activationConstraint: { distance: 8 },
     })
   );
 
   function handleDragStart(event: DragStartEvent) {
+    const type = event.active.data.current?.type;
+    if (type === 'column') {
+      setActiveColumnId(event.active.id as string);
+      return;
+    }
+    // Task drag
     const taskId = event.active.id as string;
     for (const col of displayColumns) {
       const found = col.tasks.find((t) => t.id === taskId);
@@ -173,28 +194,43 @@ export default function ProjectBoardPage() {
   }
 
   function handleDragEnd(event: DragEndEvent) {
-    setActiveTask(null);
-
     const { active, over } = event;
+
+    if (active.data.current?.type === 'column') {
+      setActiveColumnId(null);
+      if (!over || active.id === over.id) return;
+
+      const oldIds = displayColumns.map((c) => c.id);
+      const oldIndex = oldIds.indexOf(active.id as string);
+      const newIndex = oldIds.indexOf(over.id as string);
+      if (oldIndex === -1 || newIndex === -1) return;
+
+      const newOrder = arrayMove(oldIds, oldIndex, newIndex);
+      setColumnOrderOverride(newOrder);
+      reorderColumns.mutate(newOrder, {
+        onError: () => setColumnOrderOverride(null),
+      });
+      return;
+    }
+
+    // Task drag
+    setActiveTask(null);
     if (!over) return;
 
     const draggedTaskId = active.id as string;
     const targetColumnId = over.id as string;
 
-    // Find the current column of the dragged task
     const currentColumn = displayColumns.find((col) =>
       col.tasks.some((t) => t.id === draggedTaskId)
     );
     if (!currentColumn || currentColumn.id === targetColumnId) return;
 
-    // Optimistic local move so the card stays put while the request is in flight.
     setDragOverrides((prev) => {
       const next = new Map(prev);
       next.set(draggedTaskId, targetColumnId);
       return next;
     });
 
-    // Append-at-end sort: max existing sortOrder in target column + 1, or 0 if empty.
     const targetColumn = displayColumns.find((col) => col.id === targetColumnId);
     const lastSortOrder = targetColumn?.tasks.reduce(
       (max, task) => (task.sortOrder > max ? task.sortOrder : max),
@@ -209,7 +245,6 @@ export default function ProjectBoardPage() {
       { taskId: draggedTaskId, columnId: targetColumnId, sortOrder },
       {
         onError: () => {
-          // Rollback: drop the override so the card snaps back to its server position.
           setDragOverrides((prev) => {
             if (!prev.has(draggedTaskId)) return prev;
             const next = new Map(prev);
@@ -220,6 +255,10 @@ export default function ProjectBoardPage() {
       }
     );
   }
+
+  const activeColumn = activeColumnId
+    ? displayColumns.find((c) => c.id === activeColumnId) ?? null
+    : null;
 
   return (
     <section style={pageStyle}>
@@ -232,27 +271,60 @@ export default function ProjectBoardPage() {
       {!isLoading && !isError && data && displayColumns.length === 0 && (
         <p style={mutedStyle}>This board has no columns yet.</p>
       )}
-      {displayColumns.length > 0 && (
-        <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-          <div style={boardStyle}>
+
+      <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+        <div style={boardStyle}>
+          <SortableContext
+            items={displayColumns.map((c) => c.id)}
+            strategy={horizontalListSortingStrategy}
+          >
             {displayColumns.map((column) => (
               <BoardColumnView
                 key={column.id}
                 column={column}
                 selectedTaskId={selectedTaskId}
                 onSelectTask={setSelectedTaskId}
+                onRename={(colId, name) => renameColumn.mutate({ columnId: colId, name })}
+                onDelete={(colId) => deleteColumn.mutate(colId)}
               />
             ))}
-          </div>
-          <DragOverlay>
-            {activeTask ? (
-              <div style={{ opacity: 0.9, pointerEvents: 'none', width: '260px' }}>
-                <TaskCard task={activeTask} />
-              </div>
-            ) : null}
-          </DragOverlay>
-        </DndContext>
-      )}
+          </SortableContext>
+          <AddColumnForm projectId={projectId} />
+        </div>
+        <DragOverlay>
+          {activeTask ? (
+            <div style={{ opacity: 0.9, pointerEvents: 'none', width: '260px' }}>
+              <TaskCard task={activeTask} />
+            </div>
+          ) : activeColumn ? (
+            <div
+              style={{
+                opacity: 0.9,
+                pointerEvents: 'none',
+                minWidth: '260px',
+                maxWidth: '300px',
+                backgroundColor: 'var(--color-bg-muted)',
+                border: '1px solid var(--color-border)',
+                borderRadius: 'var(--radius-lg)',
+                padding: 'var(--space-3)',
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 'var(--font-size-sm)',
+                  fontWeight: 'var(--font-weight-semibold)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.04em',
+                  color: 'var(--color-text)',
+                }}
+              >
+                {activeColumn.name}
+              </span>
+            </div>
+          ) : null}
+        </DragOverlay>
+      </DndContext>
+
       <TaskDrawer taskId={selectedTaskId} projectId={projectId ?? ''} onClose={() => setSelectedTaskId(null)} />
     </section>
   );
@@ -300,6 +372,143 @@ function CreateTaskRow({ projectId }: { projectId: string | undefined }) {
         {isPending ? 'Creating…' : 'Create task'}
       </button>
       {errorMessage && <p style={errorTextStyle}>{errorMessage}</p>}
+    </form>
+  );
+}
+
+function AddColumnForm({ projectId }: { projectId: string | undefined }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+  const createColumn = useCreateColumn(projectId);
+
+  function openForm() {
+    setOpen(true);
+    setName('');
+    // focus next tick after render
+    setTimeout(() => inputRef.current?.focus(), 0);
+  }
+
+  function closeForm() {
+    setOpen(false);
+    setName('');
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    createColumn.mutate(trimmed, { onSuccess: () => closeForm() });
+  }
+
+  const addBtnStyle: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-1)',
+    padding: 'var(--space-2) var(--space-3)',
+    fontSize: 'var(--font-size-sm)',
+    fontWeight: 'var(--font-weight-medium)',
+    color: 'var(--color-text-subtle)',
+    backgroundColor: 'var(--color-bg-muted)',
+    border: '1px dashed var(--color-border)',
+    borderRadius: 'var(--radius-lg)',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
+    minWidth: '140px',
+    alignSelf: 'flex-start',
+  };
+
+  const formContainerStyle: React.CSSProperties = {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 'var(--space-2)',
+    minWidth: '200px',
+    maxWidth: '260px',
+    flex: '0 0 auto',
+    backgroundColor: 'var(--color-bg-muted)',
+    border: '1px solid var(--color-border)',
+    borderRadius: 'var(--radius-lg)',
+    padding: 'var(--space-3)',
+    alignSelf: 'flex-start',
+  };
+
+  const colInputStyle: React.CSSProperties = {
+    padding: 'var(--space-2) var(--space-3)',
+    fontSize: 'var(--font-size-sm)',
+    color: 'var(--color-text)',
+    backgroundColor: 'var(--color-bg)',
+    border: '1px solid var(--color-border)',
+    borderRadius: 'var(--radius-md)',
+    outline: 'none',
+    width: '100%',
+    boxSizing: 'border-box',
+  };
+
+  const formActionsStyle: React.CSSProperties = {
+    display: 'flex',
+    gap: 'var(--space-2)',
+  };
+
+  const cancelBtnStyle: React.CSSProperties = {
+    flex: 1,
+    padding: 'var(--space-1) var(--space-2)',
+    fontSize: 'var(--font-size-sm)',
+    color: 'var(--color-text-subtle)',
+    backgroundColor: 'transparent',
+    border: '1px solid var(--color-border)',
+    borderRadius: 'var(--radius-md)',
+    cursor: 'pointer',
+  };
+
+  const saveBtnStyle: React.CSSProperties = {
+    flex: 1,
+    padding: 'var(--space-1) var(--space-2)',
+    fontSize: 'var(--font-size-sm)',
+    fontWeight: 'var(--font-weight-semibold)',
+    color: 'var(--color-text-on-accent)',
+    backgroundColor: 'var(--color-accent)',
+    border: 'none',
+    borderRadius: 'var(--radius-md)',
+    cursor: 'pointer',
+  };
+
+  const saveBtnDisabledStyle: React.CSSProperties = {
+    ...saveBtnStyle,
+    opacity: 0.5,
+    cursor: 'not-allowed',
+  };
+
+  if (!open) {
+    return (
+      <button style={addBtnStyle} onClick={openForm}>
+        + Add column
+      </button>
+    );
+  }
+
+  const isDisabled = createColumn.isPending || !name.trim();
+
+  return (
+    <form style={formContainerStyle} onSubmit={handleSubmit}>
+      <input
+        ref={inputRef}
+        style={colInputStyle}
+        type="text"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="Column name…"
+        maxLength={100}
+        disabled={createColumn.isPending}
+        onKeyDown={(e) => e.key === 'Escape' && closeForm()}
+      />
+      <div style={formActionsStyle}>
+        <button type="submit" style={isDisabled ? saveBtnDisabledStyle : saveBtnStyle} disabled={isDisabled}>
+          {createColumn.isPending ? 'Adding…' : 'Add'}
+        </button>
+        <button type="button" style={cancelBtnStyle} onClick={closeForm}>
+          Cancel
+        </button>
+      </div>
     </form>
   );
 }

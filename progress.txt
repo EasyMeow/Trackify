@@ -3774,3 +3774,82 @@ What was tested:
 Follow-up risk:
 - `reorderColumns` does N individual `save()` calls (one per column) rather than a bulk update; fine for typical column counts (3–15), acceptable for MVP.
 - TASK-102 (frontend: add/rename/reorder/delete columns in the board UI) is next.
+
+================================================================================
+TASK-102 — Wire board UI to manage columns: add, rename, reorder, delete (DONE)
+================================================================================
+
+Scope
+-----
+Frontend-only task. The board already had working task DnD (task cards draggable
+between droppable columns). This task extends the board to let users manage the
+columns themselves.
+
+Changes
+-------
+frontend/src/modules/kanban/api/boardApi.ts
+  - Added `ColumnResponse` interface (id, projectId, name, position, timestamps).
+  - Added `createColumn(projectId, name)` → POST /projects/{id}/columns
+  - Added `renameColumn(projectId, columnId, name)` → PATCH /projects/{id}/columns/{cid}
+  - Added `deleteColumn(projectId, columnId)` → DELETE (204 or 409 if non-empty)
+  - Added `reorderColumns(projectId, columnIds)` → PATCH /projects/{id}/columns/order
+
+frontend/src/modules/kanban/hooks/useCreateColumn.ts (new)
+frontend/src/modules/kanban/hooks/useRenameColumn.ts (new)
+frontend/src/modules/kanban/hooks/useDeleteColumn.ts (new)
+frontend/src/modules/kanban/hooks/useReorderColumns.ts (new)
+  - Each is a TanStack Query useMutation: invalidates ['projects', projectId, 'board']
+    on success; calls addErrorToast on error (the backend's 409 non-empty message
+    flows through ApiError.message directly).
+
+frontend/src/modules/kanban/components/BoardColumnView.tsx
+  - Replaced useDroppable (dnd-kit/core) with useSortable (dnd-kit/sortable)
+    using data: { type: 'column' }. setNodeRef goes on the outer column div,
+    making the whole column both draggable (for reorder) and droppable (for tasks).
+  - CSS.Transform.toString(transform) + transition applied inline for smooth sort
+    animation; opacity 0.4 while isDragging.
+  - isOver && !isDragging drives the task-drop highlight (same visual as before).
+  - Grip handle (⠿ character, 16px) in the header gets {...attributes}{...listeners}
+    so column dragging only starts from the handle, not the task area.
+  - Column name <h2> is clickable (cursor: text); clicking enters edit mode with a
+    focused <input> pre-filled with the current name. Enter/blur saves (calls
+    onRename if value changed), Escape cancels.
+  - × delete button in the header right edge calls onDelete?(column.id).
+
+frontend/src/pages/ProjectBoardPage.tsx
+  - Imported SortableContext, arrayMove, horizontalListSortingStrategy from
+    @dnd-kit/sortable.
+  - Added columnOrderOverride: string[] | null state for optimistic column
+    reordering (same "set-and-forget" pattern as dragOverrides for tasks).
+  - applyColumnOrder() helper reorders columns by override array; unknown ids
+    appended at end (handles new columns added while override is live).
+  - displayColumns useMemo now applies both task DnD overrides and column order
+    override.
+  - handleDragStart detects type === 'column' → sets activeColumnId; falls
+    through to existing task logic otherwise.
+  - handleDragEnd checks active.data.current?.type === 'column' first:
+    uses arrayMove to compute new order, sets columnOrderOverride (optimistic),
+    calls reorderColumns.mutate with onError rollback (setColumnOrderOverride(null)).
+    Task drag path unchanged.
+  - DragOverlay now also renders a ghost column card when activeColumn is set.
+  - SortableContext wraps the columns div with items=displayColumns.map(c=>c.id).
+  - AddColumnForm component (inline in file): collapsed = dashed "+ Add column"
+    button; expanded = compact form (input + Add/Cancel buttons) inside the board
+    flex row. onSuccess closes the form and resets.
+  - renameColumn.mutate and deleteColumn.mutate wired to onRename/onDelete props.
+  - DndContext moved up to wrap the full board area (including AddColumnForm).
+
+Verification
+------------
+- `(cd frontend && npm run build)` → tsc -b + vite build clean, 447 modules, 0 errors.
+- Backend untouched; no Maven build run.
+
+Follow-up risk
+--------------
+- Column DnD uses @dnd-kit/sortable v10 horizontalListSortingStrategy. The strategy
+  computes target index purely from horizontal x-offset collision; may feel slightly
+  imprecise on very narrow viewports. Acceptable for MVP.
+- columnOrderOverride is never actively cleared on success (same as dragOverrides);
+  after the board refetch the derived order will match the server order so it is a
+  natural no-op. Only cleared on error for rollback.
+- TASK-103 (DELETE /api/tasks/{taskId} with comment/dependency cleanup) is next.
