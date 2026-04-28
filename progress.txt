@@ -3643,3 +3643,24 @@ What changed:
 Follow-up risk:
 - Slug is not updated when the name changes — this is intentional (slug is a stable identifier). Future tasks that surface the slug in the UI should note this.
 - TASK-095 (DELETE /api/projects/{projectId}) is next.
+
+## 2026-04-28 — TASK-095: DELETE /api/projects/{projectId}
+
+What changed:
+- Added `deleteByTaskIdIn(Collection<UUID>)` to `CommentRepository`.
+- Added `deleteByPredecessorTaskIdIn` and `deleteBySuccessorTaskIdIn` to `TaskDependencyRepository`.
+- Added `findByProjectId` and `deleteByProjectId` to `TaskRepository`.
+- Added `deleteByProjectId` to `BoardColumnRepository` and `ProjectMemberRepository`.
+- Created `ProjectDeleteService` — loads project (404), checks workspace membership (403), then in one @Transactional: deletes outgoing and incoming dependency edges, comments, tasks, board columns, project members, and the project row itself.
+- Added `DELETE /{projectId}` handler to `ProjectByIdController` returning 204 No Content.
+- Added `@MockitoBean ProjectDeleteService` to `ProjectByIdControllerTest` and `ProjectPatchControllerTest` (required because controller now has 3 deps).
+- Created `ProjectDeleteControllerTest` with 4 scenarios: happy-path 204, 404 missing project, 403 non-member, 401 unauthenticated.
+- All 135 backend tests pass.
+
+What was tested:
+- `ProjectDeleteControllerTest` (4 tests): member gets 204, missing 404, non-member 403, unauthenticated 401.
+- Existing 131 tests remain green after repository additions.
+
+Follow-up risk:
+- `deleteByProjectId` on TaskRepository uses Spring Data's derived-query delete (SELECT then per-entity delete). For large projects this is acceptable but not optimal. A `@Modifying @Query` bulk delete could be added if performance becomes a concern.
+- TASK-096 (Make ProjectSettingsPage editable) is next.

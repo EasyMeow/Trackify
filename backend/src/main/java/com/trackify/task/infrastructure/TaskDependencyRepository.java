@@ -61,4 +61,8 @@ public interface TaskDependencyRepository extends JpaRepository<TaskDependency, 
      *                           empty collection returns an empty list
      */
     List<TaskDependency> findByPredecessorTaskIdIn(Collection<UUID> predecessorTaskIds);
+
+    void deleteByPredecessorTaskIdIn(Collection<UUID> predecessorTaskIds);
+
+    void deleteBySuccessorTaskIdIn(Collection<UUID> successorTaskIds);
 }

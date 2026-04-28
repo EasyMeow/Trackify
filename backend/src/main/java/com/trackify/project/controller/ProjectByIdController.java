@@ -1,18 +1,22 @@
 package com.trackify.project.controller;
 
 import com.trackify.auth.application.LocalUserPrincipal;
+import com.trackify.project.application.ProjectDeleteService;
 import com.trackify.project.application.ProjectQueryService;
 import com.trackify.project.application.ProjectUpdateService;
 import com.trackify.project.dto.ProjectPatchRequest;
 import com.trackify.project.dto.ProjectResponse;
 
 import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
@@ -35,11 +39,14 @@ public class ProjectByIdController {
 
     private final ProjectQueryService projectQueryService;
     private final ProjectUpdateService projectUpdateService;
+    private final ProjectDeleteService projectDeleteService;
 
     public ProjectByIdController(ProjectQueryService projectQueryService,
-                                 ProjectUpdateService projectUpdateService) {
+                                 ProjectUpdateService projectUpdateService,
+                                 ProjectDeleteService projectDeleteService) {
         this.projectQueryService = projectQueryService;
         this.projectUpdateService = projectUpdateService;
+        this.projectDeleteService = projectDeleteService;
     }
 
     @GetMapping("/{projectId}")
@@ -55,5 +62,13 @@ public class ProjectByIdController {
             @Valid @RequestBody ProjectPatchRequest request,
             @AuthenticationPrincipal LocalUserPrincipal principal) {
         return projectUpdateService.patch(projectId, principal.userId(), request);
+    }
+
+    @DeleteMapping("/{projectId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteProject(
+            @PathVariable UUID projectId,
+            @AuthenticationPrincipal LocalUserPrincipal principal) {
+        projectDeleteService.delete(projectId, principal.userId());
     }
 }

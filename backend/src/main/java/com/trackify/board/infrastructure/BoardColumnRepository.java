@@ -14,4 +14,6 @@ import java.util.UUID;
 public interface BoardColumnRepository extends JpaRepository<BoardColumn, UUID> {
 
     List<BoardColumn> findByProjectIdOrderByPositionAsc(UUID projectId);
+
+    void deleteByProjectId(UUID projectId);
 }

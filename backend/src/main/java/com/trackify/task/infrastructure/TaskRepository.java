@@ -34,4 +34,8 @@ public interface TaskRepository extends JpaRepository<Task, UUID> {
      * without requiring a separate aggregation projection.
      */
     Optional<Task> findTopByColumnIdOrderBySortOrderDesc(UUID columnId);
+
+    List<Task> findByProjectId(UUID projectId);
+
+    void deleteByProjectId(UUID projectId);
 }

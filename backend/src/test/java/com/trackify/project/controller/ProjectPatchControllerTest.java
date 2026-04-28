@@ -16,6 +16,7 @@ import com.trackify.common.exception.NotFoundException;
 import com.trackify.config.JacksonConfig;
 import com.trackify.config.SecurityConfig;
 import com.trackify.config.WebConfig;
+import com.trackify.project.application.ProjectDeleteService;
 import com.trackify.project.application.ProjectQueryService;
 import com.trackify.project.application.ProjectUpdateService;
 import com.trackify.project.dto.ProjectPatchRequest;
@@ -69,6 +70,9 @@ class ProjectPatchControllerTest {
 
     @MockitoBean
     private ProjectUpdateService projectUpdateService;
+
+    @MockitoBean
+    private ProjectDeleteService projectDeleteService;
 
     private Authentication authFor(UUID userId, String login) {
         LocalUserPrincipal principal = new LocalUserPrincipal(userId, login, "hashed-pw");
