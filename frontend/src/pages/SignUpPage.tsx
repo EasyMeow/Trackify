@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useRegister } from '../modules/auth/hooks/useRegister';
 import { ApiError } from '../shared/api/httpClient';
 
@@ -211,6 +211,23 @@ export default function SignUpPage() {
       >
         {submitting ? 'Creating account…' : 'Create account'}
       </button>
+
+      <p
+        style={{
+          margin: 0,
+          textAlign: 'center',
+          fontSize: 'var(--font-size-sm)',
+          color: 'var(--color-text-muted)',
+        }}
+      >
+        Already have an account?{' '}
+        <Link
+          to="/sign-in"
+          style={{ color: 'var(--color-accent)', fontWeight: 'var(--font-weight-medium)' }}
+        >
+          Sign in
+        </Link>
+      </p>
     </form>
   );
 }

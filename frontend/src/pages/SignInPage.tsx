@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../modules/auth/hooks/useAuth';
 import { ApiError } from '../shared/api/httpClient';
 
@@ -142,6 +142,23 @@ export default function SignInPage() {
       >
         {submitting ? 'Signing in…' : 'Sign in'}
       </button>
+
+      <p
+        style={{
+          margin: 0,
+          textAlign: 'center',
+          fontSize: 'var(--font-size-sm)',
+          color: 'var(--color-text-muted)',
+        }}
+      >
+        Don't have an account?{' '}
+        <Link
+          to="/sign-up"
+          style={{ color: 'var(--color-accent)', fontWeight: 'var(--font-weight-medium)' }}
+        >
+          Create one
+        </Link>
+      </p>
     </form>
   );
 }

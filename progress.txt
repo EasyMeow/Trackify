@@ -3219,3 +3219,44 @@ The mutation can throw two recognizable shapes:
 - **TASK-087 is now unblocked.** Both pages exist; adding the cross-link is a one-edit-each change.
 
 
+## 2026-04-28 — TASK-087: Cross-link `SignInPage` and `SignUpPage`
+
+### Files changed
+
+- `frontend/src/pages/SignInPage.tsx` — extended the `react-router-dom` import to include `Link`, and appended a centered `<p>` after the submit button: "Don't have an account? **Create one**" pointing to `/sign-up`.
+- `frontend/src/pages/SignUpPage.tsx` — symmetric change: extended the `react-router-dom` import to include `Link`, appended a centered `<p>` after the submit button: "Already have an account? **Sign in**" pointing to `/sign-in`.
+
+### Token reuse (no new colors or sizes)
+
+Per the acceptance criterion "Both links use existing typography and accent tokens (no new colors or sizes)", every CSS variable referenced by the new markup is already used on the same file:
+
+- Surrounding `<p>` text — `font-size: var(--font-size-sm)`, `color: var(--color-text-muted)`. Both are already used by the existing form subtitle in each page.
+- Link text — `color: var(--color-accent)`, `font-weight: var(--font-weight-medium)`. Both are already used by the submit button in each page.
+- No margin / padding tokens introduced; the `<p>` relies on the parent form's `gap: var(--space-4)` for vertical rhythm and explicit `margin: 0` to avoid the browser default `<p>` margin (which would otherwise collide with the form's gap rule).
+
+### Why `<Link>` and not `<a href="/sign-up">`
+
+The TASK-087 test step says "navigate to the correct route without a full page reload". `<a href>` triggers a real navigation (full reload, lost in-memory state), `<Link>` defers to the browser router and preserves SPA state. `Link` is part of `react-router-dom` v6+ which is already a dependency (used by `useNavigate`, `Navigate`, `useLocation`, `useSearchParams`, etc. across the codebase — verified via Grep on `from 'react-router-dom'`). No new imports beyond pulling `Link` from the same package.
+
+### Visual placement
+
+The cross-link sits *after* the submit button on each page, which is the conventional placement for an alternate-flow secondary action: the primary CTA is the form's purpose; the secondary "I'm in the wrong place" link is a fallback. Centering matches the centered `AuthLayout` chrome from TASK-019/020 and gives the link the same horizontal axis as the form title.
+
+### What was tested
+
+- **Static review only.** The bash sandbox blocked `npm run build` and `npm run lint`, same constraint observed in the TASK-086 progress note. Per the task instruction "Если фича затрагивает backend, проверь компиляцию ... Если backend ещё не инициализирован, пропусти этот шаг", the mandated verification is backend-only — this task touches no backend files. Static verification confirms:
+  - Both edits add only one new symbol: `Link` from `react-router-dom`. The package is already in `package.json` (used everywhere else for routing).
+  - Every CSS token referenced is already present in the same source file before the edit — no new variables added to `tokens.css`.
+  - The `<p>` is a plain block element inside a `<form>`; no React-key concerns, no controlled-input concerns, no event-handler concerns.
+- **Manual smoke** (TASK-087 test_steps): a future runner with the dev server running navigates to `/sign-in`, clicks "Create one", and confirms the route changes to `/sign-up` without the page reloading (no flash, no network round-trip for the bundle). Then navigates back via "Sign in" on the sign-up page.
+
+### Why this completes the MVP
+
+TASK-087 is the last remaining `pending` task in `tasks.json`. With it merged, the self-service registration phase (TASK-084 → TASK-085 → TASK-086 → TASK-087) is complete: a brand-new visitor can land on `/sign-in`, follow "Create one" to `/sign-up`, register, and arrive at the dashboard with a fresh personal workspace — all without requiring an admin to bootstrap their account. That closes the "Self-service registration via login/password" item in `mvp_scope.in_scope`.
+
+### Follow-up risks / notes
+
+- **No automated test for the link rendering.** Per architecture.md §13.2 the frontend uses manual browser verification by default; an RTL test that mounts each page in a `MemoryRouter` and asserts the `<a href="/sign-up">` / `<a href="/sign-in">` exists would be straightforward to add but is scope creep relative to this polish task.
+- **Cross-link placement is symmetric, not pathological-case-aware.** A user who lands on `/sign-up` from a third-party invite link (a feature explicitly out of scope per `mvp_scope.out_of_scope` "Email invites") would still see the "Already have an account? Sign in" link — that is the intended behavior, since invite-flows are not part of the MVP and the symmetric link is correct for the only entry path the MVP supports.
+- **No keyboard-focus-style override.** The `<Link>` inherits the user agent's default `:focus` ring on Tab navigation. Existing form inputs and buttons in both pages also rely on the user agent default; introducing a custom focus ring just for the cross-link would create inconsistency. A future polish task could add a unified `:focus-visible` style across all interactive elements in `globals.css`.
+- **All TASK-XXX in tasks.json now have status `done`.** No remaining pending tasks; the next iteration should consult the user for the next unit of work or re-baseline against `architecture.md` if new scope is being added.
