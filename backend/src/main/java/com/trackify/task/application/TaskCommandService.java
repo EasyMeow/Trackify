@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -32,6 +33,25 @@ public class TaskCommandService {
     private static final String DEFAULT_STATUS = "TODO";
     private static final String DEFAULT_PRIORITY = "MEDIUM";
     private static final Set<String> VALID_PRIORITIES = Set.of("LOW", "MEDIUM", "HIGH", "URGENT");
+
+    /**
+     * Maps a normalized column name (uppercased, whitespace and hyphens collapsed
+     * to underscores) to the matching task status enum. Aliases like "CANCELED"
+     * and "REVIEW" are accepted on top of the canonical names so the mapping is
+     * forgiving of small spelling variants in user-edited column names.
+     *
+     * <p>Used by {@link #moveTask} to keep the persisted task status in sync with
+     * the destination column on a Kanban drag-and-drop.
+     */
+    private static final Map<String, String> COLUMN_NAME_TO_STATUS = Map.of(
+            "TODO",        "TODO",
+            "IN_PROGRESS", "IN_PROGRESS",
+            "IN_REVIEW",   "IN_REVIEW",
+            "REVIEW",      "IN_REVIEW",
+            "DONE",        "DONE",
+            "CANCELLED",   "CANCELLED",
+            "CANCELED",    "CANCELLED"
+    );
 
     private final ProjectQueryService projectQueryService;
     private final BoardColumnRepository boardColumnRepository;
@@ -174,10 +194,13 @@ public class TaskCommandService {
      * otherwise — preventing a task from being smuggled into another project's
      * board via a forged {@code columnId}.
      *
-     * <p>Status field is intentionally not modified here. Column-to-status mapping
-     * is not part of the MVP scope; the lifecycle status remains independent of
-     * board position. Tasks dragged to a "Done" column keep their stored status
-     * until edited explicitly via {@code PATCH /api/tasks/{id}}.
+     * <p>Status synchronization (TASK-090): when the destination column's name
+     * normalizes to a known status enum (e.g. "Todo" → {@code TODO}, "In Progress"
+     * → {@code IN_PROGRESS}, "Done" → {@code DONE}), the task's persisted status
+     * is updated to match. For custom column names that do not map to any known
+     * status, the existing status is preserved so the move still succeeds. This
+     * keeps the drawer and list-view status badge consistent with the column the
+     * card is dropped into for the seeded default board.
      *
      * @param taskId  UUID of the task to move
      * @param userId  authenticated caller's UUID
@@ -206,8 +229,26 @@ public class TaskCommandService {
         task.setColumnId(request.columnId());
         task.setSortOrder(request.sortOrder());
 
+        String mappedStatus = mapColumnNameToStatus(targetColumn.getName());
+        if (mappedStatus != null) {
+            task.setStatus(mappedStatus);
+        }
+
         Task saved = taskRepository.save(task);
         return toResponse(saved);
+    }
+
+    /**
+     * Normalizes {@code columnName} (trim, uppercase, collapse whitespace/hyphens
+     * to underscores) and returns the matching task status, or {@code null} when
+     * the column name is custom and has no canonical mapping.
+     */
+    private static String mapColumnNameToStatus(String columnName) {
+        if (columnName == null) {
+            return null;
+        }
+        String normalized = columnName.trim().toUpperCase().replaceAll("[\\s-]+", "_");
+        return COLUMN_NAME_TO_STATUS.get(normalized);
     }
 
     /**

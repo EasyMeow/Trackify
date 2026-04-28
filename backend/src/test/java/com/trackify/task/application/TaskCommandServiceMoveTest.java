@@ -99,6 +99,10 @@ class TaskCommandServiceMoveTest {
         return new BoardColumn(columnProjectId, "Anywhere", 0);
     }
 
+    private BoardColumn buildColumn(UUID columnProjectId, String name) {
+        return new BoardColumn(columnProjectId, name, 0);
+    }
+
     // -------------------------------------------------------------------------
     // Tests
     // -------------------------------------------------------------------------
@@ -187,5 +191,86 @@ class TaskCommandServiceMoveTest {
                 .hasMessageContaining("Board column not found");
 
         verify(taskRepository, never()).save(any());
+    }
+
+    // -------------------------------------------------------------------------
+    // TASK-090: column → status synchronization
+    // -------------------------------------------------------------------------
+
+    @Test
+    void moveToInProgressColumnSyncsStatusToInProgress() {
+        Task existing = buildTask(originColumnId, 1.0); // status starts at TODO
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(existing));
+        when(boardColumnRepository.findById(destinationColumnId))
+                .thenReturn(Optional.of(buildColumn(projectId, "In Progress")));
+        when(taskRepository.save(any(Task.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        TaskResponse response = service.moveTask(
+                taskId, userId, new MoveTaskRequest(destinationColumnId, 0.0));
+
+        assertThat(response.status()).isEqualTo("IN_PROGRESS");
+
+        ArgumentCaptor<Task> captor = ArgumentCaptor.forClass(Task.class);
+        verify(taskRepository).save(captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo("IN_PROGRESS");
+    }
+
+    @Test
+    void moveToDoneColumnSyncsStatusToDone() {
+        Task existing = buildTask(originColumnId, 1.0);
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(existing));
+        when(boardColumnRepository.findById(destinationColumnId))
+                .thenReturn(Optional.of(buildColumn(projectId, "Done")));
+        when(taskRepository.save(any(Task.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        TaskResponse response = service.moveTask(
+                taskId, userId, new MoveTaskRequest(destinationColumnId, 0.0));
+
+        assertThat(response.status()).isEqualTo("DONE");
+    }
+
+    @Test
+    void moveToTodoColumnSyncsStatusToTodo() {
+        Task existing = buildTask(originColumnId, 1.0);
+        existing.setStatus("DONE");
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(existing));
+        when(boardColumnRepository.findById(destinationColumnId))
+                .thenReturn(Optional.of(buildColumn(projectId, "Todo")));
+        when(taskRepository.save(any(Task.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        TaskResponse response = service.moveTask(
+                taskId, userId, new MoveTaskRequest(destinationColumnId, 0.0));
+
+        assertThat(response.status()).isEqualTo("TODO");
+    }
+
+    @Test
+    void moveToCustomNamedColumnPreservesExistingStatus() {
+        Task existing = buildTask(originColumnId, 1.0);
+        existing.setStatus("IN_PROGRESS");
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(existing));
+        when(boardColumnRepository.findById(destinationColumnId))
+                .thenReturn(Optional.of(buildColumn(projectId, "Backlog")));
+        when(taskRepository.save(any(Task.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        TaskResponse response = service.moveTask(
+                taskId, userId, new MoveTaskRequest(destinationColumnId, 0.0));
+
+        // Custom column name has no canonical status mapping → status preserved.
+        assertThat(response.status()).isEqualTo("IN_PROGRESS");
+    }
+
+    @Test
+    void columnNameMappingIsCaseAndWhitespaceInsensitive() {
+        Task existing = buildTask(originColumnId, 1.0);
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(existing));
+        when(boardColumnRepository.findById(destinationColumnId))
+                .thenReturn(Optional.of(buildColumn(projectId, "  in-progress  ")));
+        when(taskRepository.save(any(Task.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        TaskResponse response = service.moveTask(
+                taskId, userId, new MoveTaskRequest(destinationColumnId, 0.0));
+
+        assertThat(response.status()).isEqualTo("IN_PROGRESS");
     }
 }

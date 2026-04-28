@@ -3365,3 +3365,98 @@ All five of these flow through the existing `GlobalExceptionHandler` and produce
 - **No integration test against a live Postgres.** The test suite uses `@WebMvcTest` (controller layer) and Mockito (service layer); neither exercises the actual SQL, the UNIQUE constraint, or the `predecessor_task_id != successor_task_id` CHECK on `task_dependencies` (V9 migration). Those constraints are exercised at runtime by the manual smoke test step. Adding a `@DataJpaTest` for the repository-level guarantees would be straightforward but is again scope creep relative to fixing the user-visible bug.
 - **Delete semantics deliberately mirror "edge under task X".** A DELETE with a `dependencyId` whose successor is a *different* task returns 404, not 403. Rationale: the URL says "the dependency hanging off task X with id Y" — if Y exists but does not hang off X, then "the dependency at this URL" does not exist. This matches the symmetric pattern in the existing controller test (`deleteDependencyNotFoundWhenMissing`).
 - **TASK-090 is now unblocked.** The next critical bug in the chain is the Kanban move that does not change the persisted task status — see `TaskCommandService.moveTask` line 178-180 ("Status field is intentionally not modified here. Column-to-status mapping is not part of the MVP scope") which is exactly the opposite of what the bug now requires. Will be picked up next iteration.
+
+
+## 2026-04-28 — TASK-090: Fix Kanban move not persisting task status
+
+### Root cause
+
+`TaskCommandService.moveTask` deliberately did not touch the task's `status`
+field — the now-removed Javadoc literally said "Status field is intentionally
+not modified here. Column-to-status mapping is not part of the MVP scope". The
+TASK-090 bug report flips that policy: dragging across columns must keep the
+persisted `status` in sync with the destination column. The board UI was
+showing the column header correctly because the card had moved, but reopening
+the drawer (or rendering the future list view) revealed the stale status —
+e.g. a task dragged from "Todo" to "Done" still had `status = "TODO"` in the
+DB and `drawer.status` would render as `Todo`.
+
+### Files changed
+
+- `backend/src/main/java/com/trackify/task/application/TaskCommandService.java`
+  - Added `COLUMN_NAME_TO_STATUS` map: normalized column name → status enum
+    (`TODO`, `IN_PROGRESS`, `IN_REVIEW`, `DONE`, `CANCELLED`). Includes
+    forgiving aliases ("REVIEW" → `IN_REVIEW`, "CANCELED" → `CANCELLED`) so
+    minor user spelling variants on rename do not break the sync.
+  - `moveTask` now resolves the destination column's `name` through
+    `mapColumnNameToStatus` (trim → uppercase → collapse whitespace and
+    hyphens to underscores) and calls `task.setStatus` when a mapping exists.
+    Custom column names that have no canonical mapping fall through and the
+    existing status is preserved — the move still succeeds.
+  - Replaced the obsolete "status not modified" Javadoc paragraph with the
+    new behavior contract.
+- `backend/src/test/java/com/trackify/task/application/TaskCommandServiceMoveTest.java`
+  - Added 5 new tests: `In Progress` → `IN_PROGRESS`, `Done` → `DONE`,
+    `Todo` → `TODO`, custom name "Backlog" preserves existing status, and
+    `"  in-progress  "` (whitespace + hyphen + lowercase) still maps to
+    `IN_PROGRESS`. Also added a `buildColumn(projectId, name)` overload so
+    tests can construct columns with specific names without leaking the
+    "Anywhere" placeholder used by older tests.
+
+### Mapping design choices
+
+- **Map by name, not by position.** Column position 0/1/2 happens to be
+  Todo/In Progress/Done in the seeded board (see `BoardColumnService`
+  `DEFAULT_COLUMN_NAMES`), but TASK-098–TASK-101 will let users add, rename,
+  and reorder columns. A position-based mapping would silently break under
+  reorder; a name-based mapping survives.
+- **Preserve existing status on unknown names.** When custom columns ship
+  (e.g. "Backlog", "Blocked"), the move endpoint should not arbitrarily
+  rewrite the status to `TODO` or refuse the move. Keeping the prior status
+  is the least-surprising behavior and means the user can still switch a
+  task's stored status explicitly via `PATCH /api/tasks/{id}`.
+- **Aliases, not strict equality.** "Review" → `IN_REVIEW` and "Canceled"
+  (single L) → `CANCELLED` are accepted because this is a UI-driven mapping
+  and the column rename flow has no canonical-name validation.
+- **Mapping lives next to `moveTask`, not in `BoardColumn`.** The board
+  module is name-only; status enums are a task-module concern. Putting the
+  mapping in `TaskCommandService` keeps the board module agnostic of task
+  statuses (architecture.md §7 modular monolith).
+
+### What was tested
+
+- `(cd backend && ./mvnw -q compile test-compile)` — green.
+- `(cd backend && ./mvnw test)` — 125 tests, 0 failures, 0 errors. The 10
+  tests in `TaskCommandServiceMoveTest` (5 existing + 5 new) all pass.
+  Existing `TaskMoveControllerTest` (7 tests) still passes — the controller
+  contract is unchanged; only the service-level effect on `status` differs.
+- **Manual smoke** (TASK-090 test_steps: drag a task across columns, reload,
+  open the drawer, confirm status matches the destination column) is for a
+  future runner with Postgres + the dev server running. Static review
+  confirms the seeded board names ("Todo", "In Progress", "Done") all hit
+  canonical mappings, so the smoke test should pass on any default-seeded
+  project.
+
+### Follow-up risks / notes
+
+- **`mappedStatus == null` silently no-ops.** If TASK-098 lands a column
+  named "Backlog" and the user expects the status to change to something on
+  drop, they will be surprised when it does not. The cleaner UX once custom
+  columns exist is to expose status as a column property (e.g. each column
+  declares which status it represents) instead of relying on name parsing.
+  That work is outside TASK-090's scope; the current behavior preserves
+  status, which is the safe choice.
+- **No migration backfills existing rows.** Tasks dragged before this fix
+  shipped still have stale statuses. The fix only takes effect on the next
+  move; users who want to repair a project's task statuses today must
+  re-drag the affected cards. A backfill SQL would be straightforward
+  (`UPDATE tasks SET status = ... FROM board_columns WHERE ...`) but is
+  scope creep relative to a forward-fix.
+- **No integration test against a live Postgres.** The CHECK constraint on
+  `tasks.status` (`TODO|IN_PROGRESS|IN_REVIEW|DONE|CANCELLED`) is exercised
+  at runtime by Flyway-managed Postgres, not by `@DataJpaTest`. Since every
+  value our mapping can produce is in the CHECK set, the constraint should
+  never fire — but this is a contract that should be re-validated if the
+  CHECK ever drifts from `COLUMN_NAME_TO_STATUS`.
+- **TASK-091 is now unblocked.** Next pending task in the chain is the
+  task drawer close-button alignment fix (priority: medium, frontend).
