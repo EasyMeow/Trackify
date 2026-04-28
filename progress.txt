@@ -3757,3 +3757,20 @@ What was tested:
 Follow-up risk:
 - Column positions are not compacted after deletion (gaps may appear). TASK-101 (reorder endpoint) normalises positions anyway, so this is acceptable.
 - TASK-101 (PATCH /api/projects/{projectId}/columns/order) is next.
+
+## 2026-04-28 — TASK-101: PATCH /api/projects/{projectId}/columns/order
+
+What changed:
+- `board/dto/ReorderColumnsRequest.java` (new): record with `@NotEmpty List<UUID> columnIds`.
+- `board/application/BoardColumnService.reorderColumns()` (new): enforces project membership, validates no duplicates, no unknown ids, no missing ids (throws `IllegalArgumentException` → 400 for each), then updates position of each column atomically within a single transaction, returns ordered list of `ColumnResponse`.
+- `board/controller/ColumnController`: added `PATCH /order` handler — Spring MVC gives the literal segment `/order` higher priority than the `/{columnId}` path variable, so no routing conflict with the rename handler.
+- `ColumnControllerTest`: added 5 reorder tests — happy path (200 + ordered list), duplicate/unknown id → 400 `BAD_REQUEST`, empty list fails `@NotEmpty` validation → 400, non-member → 403, unauthenticated → 401.
+
+What was tested:
+- `./mvnw compile test-compile` — clean.
+- `./mvnw test -Dtest=ColumnControllerTest` — 20/20 pass (15 existing + 5 new).
+- `./mvnw test` — 155 tests, 0 failures, BUILD SUCCESS.
+
+Follow-up risk:
+- `reorderColumns` does N individual `save()` calls (one per column) rather than a bulk update; fine for typical column counts (3–15), acceptable for MVP.
+- TASK-102 (frontend: add/rename/reorder/delete columns in the board UI) is next.

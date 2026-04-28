@@ -1,5 +1,6 @@
 package com.trackify.board.controller;
 
+import static org.hamcrest.Matchers.hasSize;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
@@ -340,6 +341,107 @@ class ColumnControllerTest {
         UUID columnId = UUID.randomUUID();
 
         mockMvc.perform(delete("/api/projects/{projectId}/columns/{columnId}", projectId, columnId))
+                .andExpect(status().isUnauthorized());
+        verifyNoInteractions(boardColumnService);
+    }
+
+    // --- TASK-101: PATCH /order reorder tests ---
+
+    @Test
+    void memberReordersColumnsReturns200WithOrderedList() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+        UUID col1 = UUID.randomUUID();
+        UUID col2 = UUID.randomUUID();
+        UUID col3 = UUID.randomUUID();
+        Instant now = Instant.now();
+
+        List<ColumnResponse> reordered = List.of(
+                new ColumnResponse(col3, projectId, "Done", 0, now, now),
+                new ColumnResponse(col1, projectId, "Todo", 1, now, now),
+                new ColumnResponse(col2, projectId, "In Progress", 2, now, now)
+        );
+
+        when(boardColumnService.reorderColumns(eq(projectId), eq(userId), eq(List.of(col3, col1, col2))))
+                .thenReturn(reordered);
+
+        String body = objectMapper.writeValueAsString(Map.of("columnIds", List.of(col3, col1, col2)));
+
+        mockMvc.perform(patch("/api/projects/{projectId}/columns/order", projectId)
+                        .with(authentication(authFor(userId)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(3)))
+                .andExpect(jsonPath("$[0].id").value(col3.toString()))
+                .andExpect(jsonPath("$[1].id").value(col1.toString()))
+                .andExpect(jsonPath("$[2].id").value(col2.toString()));
+    }
+
+    @Test
+    void reorderWithDuplicateOrUnknownIdReturns400() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+        UUID col1 = UUID.randomUUID();
+
+        when(boardColumnService.reorderColumns(eq(projectId), eq(userId), any()))
+                .thenThrow(new IllegalArgumentException("Duplicate column id: " + col1));
+
+        String body = objectMapper.writeValueAsString(Map.of("columnIds", List.of(col1, col1)));
+
+        mockMvc.perform(patch("/api/projects/{projectId}/columns/order", projectId)
+                        .with(authentication(authFor(userId)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.error").value("BAD_REQUEST"));
+    }
+
+    @Test
+    void reorderEmptyListFailsValidationWith400() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+
+        String body = objectMapper.writeValueAsString(Map.of("columnIds", List.of()));
+
+        mockMvc.perform(patch("/api/projects/{projectId}/columns/order", projectId)
+                        .with(authentication(authFor(userId)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400));
+        verifyNoInteractions(boardColumnService);
+    }
+
+    @Test
+    void reorderNonMemberReceivesForbidden() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+        UUID col1 = UUID.randomUUID();
+
+        when(boardColumnService.reorderColumns(eq(projectId), eq(userId), any()))
+                .thenThrow(new ForbiddenException("Project not accessible"));
+
+        String body = objectMapper.writeValueAsString(Map.of("columnIds", List.of(col1)));
+
+        mockMvc.perform(patch("/api/projects/{projectId}/columns/order", projectId)
+                        .with(authentication(authFor(userId)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403));
+    }
+
+    @Test
+    void reorderUnauthenticatedIsRejectedWith401() throws Exception {
+        UUID projectId = UUID.randomUUID();
+        UUID col1 = UUID.randomUUID();
+        String body = objectMapper.writeValueAsString(Map.of("columnIds", List.of(col1)));
+
+        mockMvc.perform(patch("/api/projects/{projectId}/columns/order", projectId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
                 .andExpect(status().isUnauthorized());
         verifyNoInteractions(boardColumnService);
     }

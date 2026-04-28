@@ -4,6 +4,7 @@ import com.trackify.auth.application.LocalUserPrincipal;
 import com.trackify.board.application.BoardColumnService;
 import com.trackify.board.dto.ColumnResponse;
 import com.trackify.board.dto.CreateColumnRequest;
+import com.trackify.board.dto.ReorderColumnsRequest;
 import com.trackify.board.dto.RenameColumnRequest;
 
 import jakarta.validation.Valid;
@@ -18,6 +19,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
+
+import java.util.List;
 
 import java.net.URI;
 import java.util.UUID;
@@ -57,6 +60,16 @@ public class ColumnController {
             @AuthenticationPrincipal LocalUserPrincipal principal) {
         boardColumnService.deleteColumn(projectId, columnId, principal.userId());
         return ResponseEntity.noContent().build();
+    }
+
+    @PatchMapping("/order")
+    public ResponseEntity<List<ColumnResponse>> reorderColumns(
+            @PathVariable UUID projectId,
+            @Valid @RequestBody ReorderColumnsRequest request,
+            @AuthenticationPrincipal LocalUserPrincipal principal) {
+        List<ColumnResponse> response = boardColumnService.reorderColumns(
+                projectId, principal.userId(), request.columnIds());
+        return ResponseEntity.ok(response);
     }
 
     @PatchMapping("/{columnId}")

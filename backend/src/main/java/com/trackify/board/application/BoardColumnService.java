@@ -12,8 +12,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * Application service for board-column mutations.
@@ -122,6 +127,57 @@ public class BoardColumnService {
             throw new ConflictException("Column must be emptied before it can be deleted");
         }
         boardColumnRepository.delete(column);
+    }
+
+    /**
+     * Reorders all columns of {@code projectId} to match the supplied id list.
+     *
+     * <p>The request must include exactly the same set of column ids that belong to
+     * the project — no extras, no omissions, no duplicates. Any violation throws
+     * {@link IllegalArgumentException} which the global handler maps to HTTP 400.
+     *
+     * @param projectId target project UUID
+     * @param userId    authenticated caller's UUID
+     * @param columnIds complete ordered list of column ids
+     * @return columns in the new order
+     */
+    @Transactional
+    public List<ColumnResponse> reorderColumns(UUID projectId, UUID userId, List<UUID> columnIds) {
+        projectQueryService.getById(projectId, userId);
+
+        // Validate: no duplicates
+        Set<UUID> seen = new HashSet<>();
+        for (UUID id : columnIds) {
+            if (!seen.add(id)) {
+                throw new IllegalArgumentException("Duplicate column id: " + id);
+            }
+        }
+
+        List<BoardColumn> existing = boardColumnRepository.findByProjectIdOrderByPositionAsc(projectId);
+        Set<UUID> existingIds = existing.stream().map(BoardColumn::getId).collect(Collectors.toSet());
+
+        // Validate: no unknown ids
+        for (UUID id : columnIds) {
+            if (!existingIds.contains(id)) {
+                throw new IllegalArgumentException("Unknown column id: " + id);
+            }
+        }
+
+        // Validate: no missing ids
+        if (columnIds.size() != existingIds.size()) {
+            throw new IllegalArgumentException("All " + existingIds.size() + " column ids must be provided");
+        }
+
+        Map<UUID, BoardColumn> byId = existing.stream()
+                .collect(Collectors.toMap(BoardColumn::getId, Function.identity()));
+
+        for (int i = 0; i < columnIds.size(); i++) {
+            BoardColumn col = byId.get(columnIds.get(i));
+            col.setPosition(i);
+            boardColumnRepository.save(col);
+        }
+
+        return columnIds.stream().map(id -> toResponse(byId.get(id))).toList();
     }
 
     private static ColumnResponse toResponse(BoardColumn column) {
