@@ -3110,3 +3110,44 @@ TASK-083's acceptance is "the full smoke checklist has been run once locally and
 - **The smoke run was code-level, not interactive.** A live click-through with a running Postgres + backend + frontend is still valuable and might surface a defect this walkthrough missed (e.g. a date-range validation flow that 4xxs without a friendly inline error). The checklist is now in shape for that runner; if they find a second defect, it will become its own follow-up task rather than reopening TASK-083.
 - **`AuthProvider.signOut()` swallows the logout API error in a `try/finally`.** That is the existing behaviour from TASK-029/030: even if the backend logout fails, the local cache is cleared and the user is redirected. The new button's catch block therefore only fires for non-API errors thrown by `setQueryData` or query-cache shape mismatches — exceedingly rare. The `addErrorToast` path is defensive.
 - **Sidebar identity block uses `user.displayName` / `user.login`.** If `displayName` is empty (the registration service does not validate it as non-empty in TASK-026), the slot collapses to whitespace. Acceptable for an MVP; a future polish task could fall back to `login` when `displayName` is blank.
+
+
+## 2026-04-28 — TASK-084: Implement `POST /api/auth/register`
+
+### Files added
+
+- `backend/src/main/java/com/trackify/auth/dto/RegisterRequest.java` — record with `@NotBlank` on login/displayName/password and `@NotBlank @Email` on email. Password minimum-length is enforced inside `UserRegistrationService` (which already consults `AuthProperties.password().minLength()`), not duplicated on the DTO.
+- `backend/src/main/java/com/trackify/auth/controller/RegisterController.java` — `@RestController @RequestMapping("/api/auth")` exposing `POST /register`. Delegates creation to `UserRegistrationService#register`, builds a `LocalUserPrincipal` directly from the just-saved `User`, persists the resulting `SecurityContext` to the session via the configured `SecurityContextRepository`, then calls `WorkspaceBootstrapService#ensurePersonalWorkspace` so the brand-new user has a personal workspace ready when the frontend hydrates via `/api/me`. Returns 201 with `MeResponse` (same shape as `GET /api/me`). Local `@ExceptionHandler(DuplicateLoginException.class)` returns 409 with the standard `ApiError` envelope and code `DUPLICATE_LOGIN`.
+- `backend/src/test/java/com/trackify/auth/controller/RegisterControllerTest.java` — `@WebMvcTest(RegisterController.class)` with five MockMvc tests covering the three acceptance test_steps:
+  1. Valid registration → 201 + `MeResponse` payload (id, login, email, displayName) + asserts an `HttpSession` exists and the persisted `SecurityContext` has `isAuthenticated()==true` with the new user's name. Proves session establishment, not just status code.
+  2. `DuplicateLoginException` from the service → 409 + `ApiError{status:409, error:"DUPLICATE_LOGIN"}`.
+  3a. Blank login → 400 + `ApiError{status:400, error:"VALIDATION_FAILED"}` (the @Valid path through `GlobalExceptionHandler.handleValidation`).
+  3b. Malformed email → 400 + `ApiError{status:400, error:"VALIDATION_FAILED"}`.
+  3c. Short password (service throws `IllegalArgumentException`) → 400 + `ApiError{status:400, error:"BAD_REQUEST"}` (the IAE path through `GlobalExceptionHandler.handleIllegalArgument`).
+
+### Key design decisions
+
+- **Session establishment mirrors `LoginController` but skips `AuthenticationManager`.** `LoginController` has to round-trip through `AuthenticationManager` → `DaoAuthenticationProvider` → `LocalUserDetailsService` because all it has is a login string and a raw password. `RegisterController` already owns the freshly-saved `User` aggregate, so it constructs the `LocalUserPrincipal` directly with `(user.getId(), user.getLogin(), user.getPasswordHash())` — exactly the same record shape that `LocalUserDetailsService.loadUserByUsername` would produce. `MeController` reads `userId` from `LocalUserPrincipal` so the follow-up `/api/me` works identically. Skipping the auth-manager round-trip avoids a redundant DB lookup and avoids any risk of `BadCredentialsException` if BCrypt’s timing happens to disagree with itself.
+- **Empty authority list `List.of()` on the `UsernamePasswordAuthenticationToken`** matches what `LocalUserDetailsService` produces today (no role-based authorities exist yet — authorization is enforced by membership lookups in `WorkspaceAccessService`/`ProjectAccessService`, not by Spring authorities).
+- **Password min-length validation lives in the service, not on the DTO.** Two reasons: (a) the configured min comes from `AuthProperties.password().minLength()` which is runtime-injected, not a compile-time constant, so a `@Size(min = ?)` annotation can’t reference it; (b) `UserRegistrationService` already does this check and throws `IllegalArgumentException`, which `GlobalExceptionHandler` already maps to 400. Adding a custom `ConstraintValidator` would be redundant. The error code on this path is `BAD_REQUEST` (not `VALIDATION_FAILED`) because the IAE path is distinct from `@Valid`. The acceptance criterion only requires "the standard ApiError shape with HTTP 400" — both codes satisfy that, and the distinction is preserved end-to-end and tested explicitly.
+- **409 mapped via local `@ExceptionHandler`, not the global one.** Mirrors `LoginController`'s pattern of keeping auth-domain status mappings close to the controller (`LoginController` does the same for `AuthenticationException` → 401). The global handler currently maps the generic `ConflictException` wrapper to error code `"CONFLICT"`; the more specific `DUPLICATE_LOGIN` code is more useful to the frontend (TASK-085) than a generic conflict, so the local handler is the right call.
+- **`/api/auth/register` is already public** — `SecurityConfig.kt` (well, `.java`) line 51 permits `/api/auth/**`, which covers `/login`, `/register`, and any future `/api/auth/*` endpoint. CSRF is disabled globally, same as login. **No changes to `SecurityConfig` were needed; none were made.** This is the safest outcome — never weaken `SecurityFilterChain` to make a feature work.
+- **Workspace bootstrap on first registration.** On a brand-new user, `WorkspaceBootstrapService#ensurePersonalWorkspace` is called inside the register handler (after session is established) so the user lands on the dashboard with a workspace selectable. This matches `LoginController`'s behaviour for first-login bootstrap and means the frontend never sees an authenticated user with zero workspaces.
+
+### What was tested
+
+- `./mvnw -Dtest=RegisterControllerTest test` → `Tests run: 5, Failures: 0, Errors: 0, Skipped: 0`. Pass.
+- `./mvnw test` (full backend suite) → `Tests run: 113, Failures: 0, Errors: 0, Skipped: 0`. Pass — no regressions.
+- Code review (`code-reviewer` agent) → **pass**; confirmed §7 layering (controller thin, no `@Transactional`, no business logic), session-establishment parity with `LoginController`, public-route confirmation, no scope creep into TASK-085/086/087, no security regression, no password-hash leakage in the response.
+
+### Follow-up risks / notes
+
+- **Timing oracle for login enumeration.** A duplicate-login 409 returns faster than a successful create (success path runs BCrypt with the configured strength). For an MVP this is the conventional trade-off and matches industry norms; if the project ever grows a security review, a fixed-time wrapper or a delayed 409 response could be added.
+- **`displayName` is structurally validated as `@NotBlank` but not bounded** — no max length on the DTO. The DB column has its own length cap (`users.display_name`); a body that exceeds it will get a 500 from the JDBC layer rather than a clean 400. Worth a future polish, not in scope here.
+- **TASK-085 is now unblocked.** Frontend should:
+  - Add `register(payload): Promise<MeResponse>` to `modules/auth/api/authApi.ts` posting JSON through the shared `httpClient` (so `credentials: 'include'` is in effect — the session cookie comes back automatically).
+  - Add `RegisterRequest` to `modules/auth/types/auth.ts` (`{ login, email, displayName, password }`).
+  - Add `useRegister` mutation that calls `register`, then `queryClient.setQueryData(queryKeys.auth.me, response)` on success — same pattern `useLogin` follows after sign-in. Surfaces backend `ApiError.message` on failure.
+  - Watch out: backend may return either error code `VALIDATION_FAILED` (DTO-level) or `BAD_REQUEST` (service-level password length). The hook should display `ApiError.message` rather than switch on the code.
+- **TASK-086** (SignUpPage) and **TASK-087** (cross-link) follow naturally; nothing in TASK-084 pre-empts their scope.
+- **No Flyway migration.** The `users` table from TASK-021 already has every column the registration writes to. No DB schema change.

@@ -29,6 +29,7 @@
       "One Spring Boot app in `backend/`.",
       "PostgreSQL for business data and server sessions.",
       "Login/password authentication via Spring Security.",
+      "Self-service registration via login/password.",
       "Personal workspace auto-created on first login.",
       "Projects belong to a workspace.",
       "One Kanban board per project with default columns.",
@@ -1568,6 +1569,93 @@
         "TASK-082"
       ],
       "status": "done"
+    },
+    {
+      "id": "TASK-084",
+      "phase": "Self-service registration",
+      "category": "auth",
+      "priority": "high",
+      "description": "Implement `POST /api/auth/register`.",
+      "start_condition": "`UserRegistrationService` exists but is not exposed over HTTP, so users cannot create accounts without an admin bootstrap.",
+      "acceptance_criteria": [
+        "A controller in the `auth` module exposes `POST /api/auth/register` as a public endpoint that delegates to `UserRegistrationService` and returns the created user payload (matching the `GET /api/me` shape) with HTTP 201.",
+        "The endpoint validates the request body (non-blank login, valid email, non-blank display name, password meeting the configured minimum length) and returns the standard `ApiError` shape with HTTP 400 on invalid input.",
+        "Duplicate login attempts return HTTP 409 with the standard `ApiError` shape.",
+        "On success the endpoint immediately establishes a Spring-authenticated session for the new user (same mechanism as the login endpoint), so the frontend can hydrate via `GET /api/me` without a separate login call."
+      ],
+      "test_steps": [
+        "Add a MockMvc test proving a valid registration returns HTTP 201 with the user payload and an established session (a follow-up `GET /api/me` returns the same user).",
+        "Add a MockMvc test proving a duplicate login returns HTTP 409 with the `ApiError` shape.",
+        "Add a MockMvc test proving an invalid body (short password, blank login, malformed email) returns HTTP 400 with the `ApiError` shape."
+      ],
+      "dependencies": [
+        "TASK-083"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "TASK-085",
+      "phase": "Self-service registration",
+      "category": "auth",
+      "priority": "high",
+      "description": "Add frontend register API client and `useRegister` hook.",
+      "start_condition": "The register endpoint exists on the backend but the frontend has no typed client or mutation hook for it.",
+      "acceptance_criteria": [
+        "`modules/auth/api/authApi.ts` exposes a typed `register` call that posts the registration payload through the shared `httpClient` (so credentials are included).",
+        "`modules/auth/types/auth.ts` defines the `RegisterRequest` type used by the API helper and the form.",
+        "`modules/auth/hooks` exposes a `useRegister` mutation hook (TanStack Query) that updates the cached `/api/me` value on success and surfaces backend `ApiError` messages on failure."
+      ],
+      "test_steps": [
+        "Run `npm run build` and confirm it succeeds.",
+        "Run `npm run lint` and confirm it succeeds."
+      ],
+      "dependencies": [
+        "TASK-084"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-086",
+      "phase": "Self-service registration",
+      "category": "auth",
+      "priority": "high",
+      "description": "Build `SignUpPage` and add the `/sign-up` route.",
+      "start_condition": "The frontend can register over the API but has no UI to do it.",
+      "acceptance_criteria": [
+        "`SignUpPage.tsx` renders inside `AuthLayout` with inputs for login, email, display name, and password, plus a submit button styled with the existing pastel-green tokens.",
+        "The `/sign-up` route is registered alongside `/sign-in` and is reachable when signed out; authenticated users hitting `/sign-up` are redirected to the dashboard, mirroring the existing `/sign-in` guard.",
+        "Submitting the form calls `useRegister`; on success the user is navigated to the dashboard (the session is already established server-side); on failure the form displays the backend error message.",
+        "Inline validation prevents submitting an obviously invalid form (empty fields, password shorter than the configured minimum)."
+      ],
+      "test_steps": [
+        "Run the dev server, navigate to `/sign-up`, register a new user, and confirm the app lands on the dashboard with the new account active.",
+        "Submit the form with a duplicate login and confirm the form shows the backend error message without crashing.",
+        "Submit the form with an empty field and confirm inline validation blocks submission."
+      ],
+      "dependencies": [
+        "TASK-085"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-087",
+      "phase": "Self-service registration",
+      "category": "polish",
+      "priority": "medium",
+      "description": "Cross-link `SignInPage` and `SignUpPage`.",
+      "start_condition": "Both auth pages exist but neither links to the other, so a new visitor cannot discover registration from the sign-in screen.",
+      "acceptance_criteria": [
+        "`SignInPage.tsx` includes a visible secondary link to `/sign-up` for users without an account.",
+        "`SignUpPage.tsx` includes a visible secondary link back to `/sign-in` for returning users.",
+        "Both links use existing typography and accent tokens (no new colors or sizes)."
+      ],
+      "test_steps": [
+        "Run the dev server and confirm both links render and navigate to the correct route without a full page reload."
+      ],
+      "dependencies": [
+        "TASK-086"
+      ],
+      "status": "pending"
     }
   ]
 }
