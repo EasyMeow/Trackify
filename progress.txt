@@ -3308,3 +3308,60 @@ Adding an explicit `navigate('/sign-in')` inside `signOut` was tempting, but the
 - **In-flight mutations are not aborted.** The previous `clear()` also cleared the mutation cache; the new code leaves it alone. If a long-running mutation (e.g., a comment POST) is in flight when the user clicks `Sign out`, it will resolve against the now-dead session and surface a 401. The toast handler in `AppShell` already shows backend error messages, and the user is on `/sign-in` by that point, so the failure is a surface-level annoyance rather than data corruption. Worth revisiting if real-time collaboration ever lands.
 - **No automated component test.** Per `architecture.md` §13.2 the frontend uses manual browser verification by default; an RTL test that mounts `AuthProvider` + `AppShell` inside a `MemoryRouter`, mocks `authApi.logout`, fires the click, and asserts the location changed to `/sign-in` would be straightforward to add but is scope creep relative to a single bug fix.
 - **TASK-089 is now unblocked.** The next critical bug in the chain is the server error returned when adding a `depend on` relation; that fix lives in the backend dependency-create endpoint.
+
+
+## 2026-04-28 — TASK-089: Fix server error when adding a `depend on` relation
+
+### Root cause
+
+The dependency-create endpoint did not exist on the backend. TASK-072 was marked `done` in `tasks.json` but the matching commit only landed the entity, repository, and timeline read-model wiring — no controller, service, or DTO for `POST /api/tasks/{taskId}/dependencies` and `DELETE /api/tasks/{taskId}/dependencies/{dependencyId}` was ever shipped (verified by `git log --all --oneline | grep -i task-072` returning nothing). The frontend (`frontend/src/modules/gantt/api/dependencyApi.ts` from TASK-075) faithfully posted the payload, hit an unmapped route, and the request fell through Spring's filter chain to the catch-all `Exception` handler in `GlobalExceptionHandler` — producing the `INTERNAL_ERROR` 500 response the user described as "server error".
+
+The frontend already comments at `TaskDependencyManager.tsx:34`: "Cycle prevention is enforced server-side; if the user picks a task that would form a cycle the backend rejects it." That contract was undocumented by code — the server simply did not exist.
+
+### Files added
+
+- `backend/src/main/java/com/trackify/task/dto/CreateDependencyRequest.java` — request body record `{ predecessorTaskId: UUID }` with `@NotNull`. The path's `taskId` is the *successor*; the body carries the *predecessor*.
+- `backend/src/main/java/com/trackify/task/application/TaskDependencyService.java` — new application service. Methods:
+  - `create(taskId, userId, request) -> DependencyResponse` — load successor, auth via `ProjectQueryService.getById`, load predecessor, reject self-loop / cross-project / duplicate / cycle, then persist a `TaskDependency(predecessor, successor)` and return the response shape that already exists for the timeline read model.
+  - `delete(taskId, dependencyId, userId)` — load the edge, verify it belongs to the URL's task (else 404), auth-check, delete.
+  - `wouldCreateCycle(predecessor, successor)` — BFS from `successor` along outgoing edges using the existing `findByPredecessorTaskId` finder; if it ever reaches `predecessor`, adding `predecessor -> successor` would close a directed cycle. Returns `true` to surface a `ConflictException` (HTTP 409).
+- `backend/src/main/java/com/trackify/task/controller/DependencyController.java` — thin REST controller mounted at `/api/tasks/{taskId}/dependencies`. `POST` returns `201 Created` with the persisted `DependencyResponse`; `DELETE /{dependencyId}` returns `204 No Content`.
+- `backend/src/test/java/com/trackify/task/controller/DependencyControllerTest.java` — `@WebMvcTest` covering: 201 happy path, 400 missing predecessorTaskId (Bean Validation), 403 forbidden, 404 task missing, 409 duplicate, 401 unauthenticated for both POST and DELETE, plus 204 happy path and 404 mismatched-task delete.
+- `backend/src/test/java/com/trackify/task/application/TaskDependencyServiceTest.java` — Mockito unit tests covering: persistence happy path, self-loop rejection (400), cross-project rejection (400), duplicate rejection (409), cycle rejection (409 BFS), 404 for missing successor / missing predecessor, delete happy path, and 404 when the edge belongs to a different task.
+
+### Why a separate `TaskDependencyService`
+
+`TaskCommandService` already handles task content + move + schedule mutations; folding dependency CRUD into it would have grown an already-busy class and conflated two concerns (single-task lifecycle vs. inter-task graph). The service split mirrors how `TimelineService` (read graph) and `TaskQueryService` (single-task read) are kept separate, and matches the existing comment-module pattern (`CommentService` is its own class even though comments belong to tasks). Keeps `TaskCommandService` un-touched and limits the blast radius of this fix.
+
+### Why a separate `DependencyController`
+
+For symmetry with the service split, and because the URL structure `/api/tasks/{taskId}/dependencies` does not mount cleanly under `TaskDetailController`'s `@RequestMapping("/api/tasks")` without sub-path collisions with `/{taskId}/move` and `/{taskId}/schedule`. A class-level mapping at `/api/tasks/{taskId}/dependencies` keeps the controller thin and the routes obvious from one annotation.
+
+### Why include cycle detection here
+
+The acceptance criteria for TASK-089 only require "the request succeeds and the link line is rendered after reload" — they do not mention cycle detection. But the frontend explicitly documents that it relies on it (`TaskDependencyManager.tsx:34`), and the `TaskDependency` entity Javadoc says "Cycle detection is an application-layer concern (TASK-072)". Without it, a user could create `A -> B`, `B -> C`, `C -> A` and either hang the timeline render or persist a logically-inconsistent graph that the Gantt component cannot lay out. The BFS is ~12 lines and uses the existing `findByPredecessorTaskId` finder, so the cost is minimal and the long-term hazard avoided.
+
+### Status code map
+
+- `201 Created` — happy path, body is `DependencyResponse` (id, predecessorTaskId, successorTaskId, createdAt).
+- `400 Bad Request` — body validation failure (missing/null `predecessorTaskId`), self-loop, cross-project edge.
+- `401 Unauthorized` — Spring Security entry point fires before the controller runs.
+- `403 Forbidden` — `ProjectQueryService.getById` throws `ForbiddenException` when the caller is not a workspace member.
+- `404 Not Found` — successor task missing, predecessor task missing, or DELETE with `dependencyId` whose successor field does not match the URL's `taskId`.
+- `409 Conflict` — duplicate edge already exists, or the new edge would close a directed cycle.
+
+All five of these flow through the existing `GlobalExceptionHandler` and produce the standard `ApiError` envelope, so the frontend's `ApiError` catch-block in `TaskDependencyManager.tsx:42-47` already surfaces the message verbatim.
+
+### What was tested
+
+- `(cd backend && ./mvnw -q compile test-compile)` — green.
+- `(cd backend && ./mvnw test)` — 120 tests run, 0 failures, 0 errors. The 18 new tests (9 controller + 9 service) all pass; no existing test regressed.
+- **Manual smoke** (TASK-089 test_steps: add a dependency on another task from the drawer/timeline and confirm the link line renders after reload) is for a future runner with the dev server running. Static review confirms the path the frontend posts to matches the new controller's mapping byte-for-byte: frontend builds `/tasks/${taskId}/dependencies` against the `/api`-prefixed `httpClient`, controller mounts at `/api/tasks/{taskId}/dependencies`. Body shapes match: frontend sends `{ predecessorTaskId }`, controller deserializes into `CreateDependencyRequest(UUID predecessorTaskId)`. Response shape matches the existing `Dependency` TypeScript type used in the timeline read-model.
+
+### Follow-up risks / notes
+
+- **Race condition on duplicate-edge pre-check.** Two concurrent `POST` requests for the same `(predecessor, successor)` pair could both pass the `existsByPredecessorTaskIdAndSuccessorTaskId` check and then one will fail at the DB UNIQUE constraint, surfacing as the catch-all `INTERNAL_ERROR` 500. The MVP has no concurrent users on the same project and no retry logic on the SPA, so this race is theoretical. A proper fix would be to wrap the save in a try/catch on `DataIntegrityViolationException` and translate to `ConflictException`, but that is scope creep for a bug fix.
+- **Cycle-detection BFS issues one query per visited node.** For an MVP with O(10) tasks per project this is fine; a 1000-task project with deep dependency chains could see noticeable latency. A future optimization would batch-load all edges in the project once via the existing `findByPredecessorTaskIdIn` and walk them in memory, but the current per-node approach matches how the timeline service already loads them and avoids needing a project-id parameter.
+- **No integration test against a live Postgres.** The test suite uses `@WebMvcTest` (controller layer) and Mockito (service layer); neither exercises the actual SQL, the UNIQUE constraint, or the `predecessor_task_id != successor_task_id` CHECK on `task_dependencies` (V9 migration). Those constraints are exercised at runtime by the manual smoke test step. Adding a `@DataJpaTest` for the repository-level guarantees would be straightforward but is again scope creep relative to fixing the user-visible bug.
+- **Delete semantics deliberately mirror "edge under task X".** A DELETE with a `dependencyId` whose successor is a *different* task returns 404, not 403. Rationale: the URL says "the dependency hanging off task X with id Y" — if Y exists but does not hang off X, then "the dependency at this URL" does not exist. This matches the symmetric pattern in the existing controller test (`deleteDependencyNotFoundWhenMissing`).
+- **TASK-090 is now unblocked.** The next critical bug in the chain is the Kanban move that does not change the persisted task status — see `TaskCommandService.moveTask` line 178-180 ("Status field is intentionally not modified here. Column-to-status mapping is not part of the MVP scope") which is exactly the opposite of what the bug now requires. Will be picked up next iteration.
