@@ -2,6 +2,7 @@ package com.trackify.task.application;
 
 import com.trackify.board.domain.BoardColumn;
 import com.trackify.board.infrastructure.BoardColumnRepository;
+import com.trackify.comment.infrastructure.CommentRepository;
 import com.trackify.project.application.ProjectQueryService;
 import com.trackify.task.domain.Task;
 import com.trackify.common.exception.NotFoundException;
@@ -10,6 +11,7 @@ import com.trackify.task.dto.MoveTaskRequest;
 import com.trackify.task.dto.ScheduleTaskRequest;
 import com.trackify.task.dto.TaskResponse;
 import com.trackify.task.dto.UpdateTaskRequest;
+import com.trackify.task.infrastructure.TaskDependencyRepository;
 import com.trackify.task.infrastructure.TaskRepository;
 
 import org.springframework.stereotype.Service;
@@ -56,13 +58,19 @@ public class TaskCommandService {
     private final ProjectQueryService projectQueryService;
     private final BoardColumnRepository boardColumnRepository;
     private final TaskRepository taskRepository;
+    private final CommentRepository commentRepository;
+    private final TaskDependencyRepository taskDependencyRepository;
 
     public TaskCommandService(ProjectQueryService projectQueryService,
                               BoardColumnRepository boardColumnRepository,
-                              TaskRepository taskRepository) {
+                              TaskRepository taskRepository,
+                              CommentRepository commentRepository,
+                              TaskDependencyRepository taskDependencyRepository) {
         this.projectQueryService = projectQueryService;
         this.boardColumnRepository = boardColumnRepository;
         this.taskRepository = taskRepository;
+        this.commentRepository = commentRepository;
+        this.taskDependencyRepository = taskDependencyRepository;
     }
 
     /**
@@ -293,6 +301,40 @@ public class TaskCommandService {
 
         Task saved = taskRepository.save(task);
         return toResponse(saved);
+    }
+
+    /**
+     * Deletes a task together with its comments and dependency edges (TASK-103).
+     *
+     * <p>Authorization: loads the task, then delegates to
+     * {@link ProjectQueryService#getById} which throws 404/403 if the caller is
+     * not a workspace member.
+     *
+     * <p>Deletion order inside the transaction:
+     * <ol>
+     *   <li>All dependency edges where the task is the predecessor.
+     *   <li>All dependency edges where the task is the successor.
+     *   <li>All comments for the task.
+     *   <li>The task itself.
+     * </ol>
+     *
+     * @param taskId UUID of the task to delete
+     * @param userId authenticated caller's UUID
+     * @throws NotFoundException if no task exists with {@code taskId}
+     * @throws com.trackify.common.exception.ForbiddenException if the caller cannot
+     *         access the task's project workspace
+     */
+    public void deleteTask(UUID taskId, UUID userId) {
+        Task task = taskRepository.findById(taskId)
+                .orElseThrow(() -> new NotFoundException("Task not found"));
+
+        projectQueryService.getById(task.getProjectId(), userId);
+
+        List<UUID> ids = List.of(taskId);
+        taskDependencyRepository.deleteByPredecessorTaskIdIn(ids);
+        taskDependencyRepository.deleteBySuccessorTaskIdIn(ids);
+        commentRepository.deleteByTaskIdIn(ids);
+        taskRepository.deleteById(taskId);
     }
 
     // -------------------------------------------------------------------------

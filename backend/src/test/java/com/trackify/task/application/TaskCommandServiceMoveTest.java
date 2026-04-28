@@ -9,11 +9,13 @@ import static org.mockito.Mockito.when;
 
 import com.trackify.board.domain.BoardColumn;
 import com.trackify.board.infrastructure.BoardColumnRepository;
+import com.trackify.comment.infrastructure.CommentRepository;
 import com.trackify.common.exception.NotFoundException;
 import com.trackify.project.application.ProjectQueryService;
 import com.trackify.task.domain.Task;
 import com.trackify.task.dto.MoveTaskRequest;
 import com.trackify.task.dto.TaskResponse;
+import com.trackify.task.infrastructure.TaskDependencyRepository;
 import com.trackify.task.infrastructure.TaskRepository;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -56,6 +58,12 @@ class TaskCommandServiceMoveTest {
     @Mock
     private TaskRepository taskRepository;
 
+    @Mock
+    private CommentRepository commentRepository;
+
+    @Mock
+    private TaskDependencyRepository taskDependencyRepository;
+
     private TaskCommandService service;
 
     private UUID projectId;
@@ -66,7 +74,8 @@ class TaskCommandServiceMoveTest {
 
     @BeforeEach
     void setUp() {
-        service = new TaskCommandService(projectQueryService, boardColumnRepository, taskRepository);
+        service = new TaskCommandService(projectQueryService, boardColumnRepository, taskRepository,
+                commentRepository, taskDependencyRepository);
 
         projectId = UUID.randomUUID();
         userId = UUID.randomUUID();

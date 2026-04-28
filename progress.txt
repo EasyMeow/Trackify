@@ -3853,3 +3853,24 @@ Follow-up risk
   after the board refetch the derived order will match the server order so it is a
   natural no-op. Only cleared on error for rollback.
 - TASK-103 (DELETE /api/tasks/{taskId} with comment/dependency cleanup) is next.
+
+## 2026-04-28 — TASK-103: DELETE /api/tasks/{taskId}
+
+What changed:
+- Added `deleteTask(UUID taskId, UUID userId)` to `TaskCommandService`:
+  - Loads task or throws NotFoundException (404).
+  - Authorizes via `ProjectQueryService.getById` (throws 403 if not a member).
+  - Deletes outgoing dependency edges (`deleteByPredecessorTaskIdIn`).
+  - Deletes incoming dependency edges (`deleteBySuccessorTaskIdIn`).
+  - Deletes comments (`deleteByTaskIdIn`).
+  - Deletes the task — all within the existing `@Transactional` class scope.
+- Added `CommentRepository` and `TaskDependencyRepository` constructor params to `TaskCommandService`.
+- Added `DELETE /{taskId}` handler to `TaskDetailController` — returns 204 No Content.
+- Created `TaskDeleteControllerTest` with 4 cases: 204 happy path, 404 missing task, 403 non-member, 401 unauthenticated.
+- Updated `TaskCommandServiceMoveTest` to pass the two new constructor params (mocked via @Mock fields).
+
+What was tested:
+- `./mvnw test` → 159 tests, 0 failures, 0 errors.
+
+Follow-up:
+- TASK-104 (frontend delete-task button in drawer) is unblocked and next.

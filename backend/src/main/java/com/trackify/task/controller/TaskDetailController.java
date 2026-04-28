@@ -12,6 +12,7 @@ import jakarta.validation.Valid;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -103,6 +104,21 @@ public class TaskDetailController {
             @AuthenticationPrincipal LocalUserPrincipal principal) {
         TaskResponse response = taskCommandService.moveTask(taskId, principal.userId(), request);
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Deletes a task with its comments and dependency edges (TASK-103).
+     *
+     * @param taskId    UUID of the task to delete
+     * @param principal authenticated caller
+     * @return HTTP 204 No Content
+     */
+    @DeleteMapping("/{taskId}")
+    public ResponseEntity<Void> deleteTask(
+            @PathVariable UUID taskId,
+            @AuthenticationPrincipal LocalUserPrincipal principal) {
+        taskCommandService.deleteTask(taskId, principal.userId());
+        return ResponseEntity.noContent().build();
     }
 
     /**
