@@ -3518,3 +3518,39 @@ Follow-up risk
 - **TASK-091 is now done.** Next pending task in the chain is TASK-092
   (replace the default Vite document title `frontend` with `Trackify`,
   priority: medium, frontend).
+  priority: medium, frontend).
+
+================================================================================
+TASK-092 — Replace Vite document title `frontend` with `Trackify` (DONE)
+================================================================================
+
+Scope
+-----
+Pure branding change. The browser tab title showed `frontend` (the default
+Vite scaffold value) instead of the product name.
+
+Changes
+-------
+File: frontend/index.html
+  - <title>frontend</title> -> <title>Trackify</title>
+
+Nothing in the SPA mutates `document.title` at runtime (verified with
+`grep -r "document.title"` and `grep -r "<title>"` across `frontend/`),
+so the static title in `index.html` is the single source of truth and
+applies to every route.
+
+Verification
+------------
+- `(cd frontend && npm run build)` -> succeeds (tsc + vite build green).
+- Built `dist/index.html` contains `<title>Trackify</title>`.
+- Backend untouched, so no Maven build run.
+
+Follow-up risk
+--------------
+- None. If a future task introduces per-route titles (e.g. via
+  react-helmet or a custom `useDocumentTitle`), the default fallback will
+  remain `Trackify`, so this change stays correct.
+
+- **TASK-092 is now done.** Next pending task in the chain is TASK-093
+  (add a green leaf SVG logo as favicon and in-app logo,
+  priority: medium, frontend).
