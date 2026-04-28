@@ -3,6 +3,7 @@ package com.trackify.board.application;
 import com.trackify.board.domain.BoardColumn;
 import com.trackify.board.dto.ColumnResponse;
 import com.trackify.board.infrastructure.BoardColumnRepository;
+import com.trackify.common.exception.NotFoundException;
 import com.trackify.project.application.ProjectQueryService;
 
 import org.springframework.stereotype.Service;
@@ -67,6 +68,30 @@ public class BoardColumnService {
         projectQueryService.getById(projectId, userId);
         long count = boardColumnRepository.countByProjectId(projectId);
         BoardColumn column = boardColumnRepository.save(new BoardColumn(projectId, name, (int) count));
+        return toResponse(column);
+    }
+
+    /**
+     * Renames an existing column that belongs to {@code projectId}.
+     *
+     * <p>Authorization is enforced first (project membership), then existence of the
+     * column within that project. A column that exists but belongs to a different
+     * project yields 404 rather than leaking information.
+     *
+     * @param projectId target project UUID
+     * @param columnId  column to rename
+     * @param userId    authenticated caller's UUID
+     * @param name      new name (non-blank, max 255 chars)
+     * @return updated column as a response DTO
+     */
+    @Transactional
+    public ColumnResponse renameColumn(UUID projectId, UUID columnId, UUID userId, String name) {
+        projectQueryService.getById(projectId, userId);
+        BoardColumn column = boardColumnRepository.findById(columnId)
+                .filter(c -> c.getProjectId().equals(projectId))
+                .orElseThrow(() -> new NotFoundException("Column not found"));
+        column.setName(name);
+        boardColumnRepository.save(column);
         return toResponse(column);
     }
 

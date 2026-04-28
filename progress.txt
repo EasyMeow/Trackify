@@ -3722,3 +3722,19 @@ What was tested:
 Follow-up risk:
 - `createColumn` uses `count()` for position — correct as long as positions stay contiguous (0..n-1). If a future delete endpoint leaves gaps it may produce duplicates. The reorder endpoint (TASK-101) will normalise positions anyway.
 - TASK-099 (rename column) is next.
+
+## 2026-04-28 — TASK-099: PATCH /api/projects/{projectId}/columns/{columnId} rename
+
+What changed:
+- `BoardColumnService.renameColumn()` was already implemented (from prior iteration alongside TASK-098); enforces project membership via `ProjectQueryService.getById`, filters column by `projectId` to prevent cross-project leakage, and returns `ColumnResponse`.
+- `ColumnController` `PATCH /{columnId}` handler was already wired (from prior iteration).
+- `RenameColumnRequest.java` DTO was already present (from prior iteration).
+- `ColumnControllerTest`: expanded the Javadoc to cover TASK-099 scenarios, added 5 new rename tests: happy path (200 + updated DTO), cross-project/missing column → 404, non-member → 403, blank name → 400, unauthenticated → 401.
+
+What was tested:
+- `./mvnw compile test-compile` — clean.
+- `./mvnw test -Dtest=ColumnControllerTest` — 10/10 pass.
+- `./mvnw test` — 145 tests, 0 failures, BUILD SUCCESS.
+
+Follow-up risk:
+- None specific. TASK-100 (DELETE column, reject non-empty) is next.

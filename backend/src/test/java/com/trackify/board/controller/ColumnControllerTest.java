@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -37,11 +38,21 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * TASK-098: verifies {@code POST /api/projects/{projectId}/columns} behaviour.
+ * TASK-098 + TASK-099: verifies column creation and rename endpoints.
  *
+ * <p>POST /api/projects/{projectId}/columns (TASK-098)
  * <ul>
  *   <li>Happy path — member creates a column; receives 201 with Location header and column DTO.
  *   <li>Missing project — service throws {@link NotFoundException}, response is 404.
+ *   <li>Non-member — service throws {@link ForbiddenException}, response is 403.
+ *   <li>Invalid body — blank name fails validation with 400.
+ *   <li>Unauthenticated — Spring Security rejects with 401.
+ * </ul>
+ *
+ * <p>PATCH /api/projects/{projectId}/columns/{columnId} (TASK-099)
+ * <ul>
+ *   <li>Happy path — member renames a column; receives 200 with updated DTO.
+ *   <li>Column belongs to different project — service throws {@link NotFoundException}, response is 404.
  *   <li>Non-member — service throws {@link ForbiddenException}, response is 403.
  *   <li>Invalid body — blank name fails validation with 400.
  *   <li>Unauthenticated — Spring Security rejects with 401.
@@ -157,6 +168,101 @@ class ColumnControllerTest {
         String body = objectMapper.writeValueAsString(Map.of("name", "New Column"));
 
         mockMvc.perform(post("/api/projects/{projectId}/columns", projectId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isUnauthorized());
+        verifyNoInteractions(boardColumnService);
+    }
+
+    // --- TASK-099: PATCH /{columnId} rename tests ---
+
+    @Test
+    void memberRenamesColumnReturns200WithUpdatedDto() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+        UUID columnId = UUID.randomUUID();
+        Instant now = Instant.now();
+
+        ColumnResponse response = new ColumnResponse(columnId, projectId, "Staging", 1, now, now);
+        when(boardColumnService.renameColumn(eq(projectId), eq(columnId), eq(userId), eq("Staging")))
+                .thenReturn(response);
+
+        String body = objectMapper.writeValueAsString(Map.of("name", "Staging"));
+
+        mockMvc.perform(patch("/api/projects/{projectId}/columns/{columnId}", projectId, columnId)
+                        .with(authentication(authFor(userId)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(columnId.toString()))
+                .andExpect(jsonPath("$.name").value("Staging"))
+                .andExpect(jsonPath("$.projectId").value(projectId.toString()));
+    }
+
+    @Test
+    void renameColumnMissingOrCrossProjectReturns404() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+        UUID columnId = UUID.randomUUID();
+
+        when(boardColumnService.renameColumn(eq(projectId), eq(columnId), eq(userId), any()))
+                .thenThrow(new NotFoundException("Column not found"));
+
+        String body = objectMapper.writeValueAsString(Map.of("name", "Renamed"));
+
+        mockMvc.perform(patch("/api/projects/{projectId}/columns/{columnId}", projectId, columnId)
+                        .with(authentication(authFor(userId)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.status").value(404))
+                .andExpect(jsonPath("$.error").value("NOT_FOUND"));
+    }
+
+    @Test
+    void renameColumnNonMemberReceivesForbidden() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+        UUID columnId = UUID.randomUUID();
+
+        when(boardColumnService.renameColumn(eq(projectId), eq(columnId), eq(userId), any()))
+                .thenThrow(new ForbiddenException("Project not accessible"));
+
+        String body = objectMapper.writeValueAsString(Map.of("name", "Renamed"));
+
+        mockMvc.perform(patch("/api/projects/{projectId}/columns/{columnId}", projectId, columnId)
+                        .with(authentication(authFor(userId)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403))
+                .andExpect(jsonPath("$.error").value("FORBIDDEN"));
+    }
+
+    @Test
+    void renameColumnBlankNameFailsValidationWith400() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+        UUID columnId = UUID.randomUUID();
+
+        String body = objectMapper.writeValueAsString(Map.of("name", ""));
+
+        mockMvc.perform(patch("/api/projects/{projectId}/columns/{columnId}", projectId, columnId)
+                        .with(authentication(authFor(userId)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400));
+        verifyNoInteractions(boardColumnService);
+    }
+
+    @Test
+    void renameColumnUnauthenticatedIsRejectedWith401() throws Exception {
+        UUID projectId = UUID.randomUUID();
+        UUID columnId = UUID.randomUUID();
+        String body = objectMapper.writeValueAsString(Map.of("name", "Renamed"));
+
+        mockMvc.perform(patch("/api/projects/{projectId}/columns/{columnId}", projectId, columnId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isUnauthorized());

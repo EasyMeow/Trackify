@@ -4,11 +4,13 @@ import com.trackify.auth.application.LocalUserPrincipal;
 import com.trackify.board.application.BoardColumnService;
 import com.trackify.board.dto.ColumnResponse;
 import com.trackify.board.dto.CreateColumnRequest;
+import com.trackify.board.dto.RenameColumnRequest;
 
 import jakarta.validation.Valid;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -45,5 +47,16 @@ public class ColumnController {
                 .buildAndExpand(response.id())
                 .toUri();
         return ResponseEntity.created(location).body(response);
+    }
+
+    @PatchMapping("/{columnId}")
+    public ResponseEntity<ColumnResponse> renameColumn(
+            @PathVariable UUID projectId,
+            @PathVariable UUID columnId,
+            @Valid @RequestBody RenameColumnRequest request,
+            @AuthenticationPrincipal LocalUserPrincipal principal) {
+        ColumnResponse response = boardColumnService.renameColumn(
+                projectId, columnId, principal.userId(), request.name());
+        return ResponseEntity.ok(response);
     }
 }
