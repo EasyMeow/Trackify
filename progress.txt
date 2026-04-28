@@ -3554,3 +3554,78 @@ Follow-up risk
 - **TASK-092 is now done.** Next pending task in the chain is TASK-093
   (add a green leaf SVG logo as favicon and in-app logo,
   priority: medium, frontend).
+
+================================================================================
+TASK-093 — Green leaf SVG logo as favicon and in-app brand mark (DONE)
+================================================================================
+
+Scope
+-----
+Branding task. The previous `frontend/public/favicon.svg` was the default
+Vite scaffold artwork (purple bolt + blurred halos), which conflicted with
+Trackify's pastel-green identity. The acceptance criteria required:
+  1. A green leaf SVG asset under `frontend/public/` referenced as the
+     favicon in `index.html`.
+  2. The same SVG used as the app logo in both `AuthLayout` (signed-out)
+     and the `AppShell` sidebar header (signed-in).
+
+Changes
+-------
+File: frontend/public/favicon.svg
+  - Replaced the Vite default (purple bolt with multiple blurred ellipses
+    and filter defs, ~6KB) with a minimal hand-rolled leaf in the project
+    palette:
+      • `viewBox` 0 0 24 24, two paths only.
+      • Outer leaf path filled with `--color-accent` (#4a8b6f).
+      • Center vein stroked with `--color-accent-active` (#335f4d).
+      • `role="img"` + `aria-label="Trackify"` for screen-reader users.
+  - The `<link rel="icon" type="image/svg+xml" href="/favicon.svg">` in
+    `index.html` already pointed at this path from TASK-013 era, so just
+    swapping the file content rewires the favicon — no HTML change
+    needed.
+
+File: frontend/src/app/layouts/AuthLayout.tsx
+  - Wrapped the existing "Trackify" `<span>` in a horizontally-centered
+    flex `<div>` with `gap: var(--space-2)`.
+  - Added `<img src="/favicon.svg" width={28} height={28}>` to the left
+    of the wordmark. `alt=""` + `aria-hidden="true"` because the
+    immediately adjacent text "Trackify" is the accessible name; the
+    image is decorative.
+  - 28px matches the 24px (`--font-size-2xl`) wordmark cap-height plus a
+    little visual weight for a balanced lockup.
+
+File: frontend/src/app/layouts/AppShell.tsx
+  - Same treatment for the sidebar header: wrapped the "Trackify"
+    `<span>` in a row-flex container with the same icon, sized 22px to
+    match the 16px (`--font-size-lg`) wordmark used in the sidebar (the
+    sidebar lockup is smaller than the auth-screen one).
+  - `aria-hidden` for the same accessibility reason as above.
+
+Why a single static asset (referenced via `<img src="/favicon.svg">`)
+rather than an inline React component:
+  • Acceptance criterion explicitly says "the same SVG is used", so a
+    single asset is the simplest single-source-of-truth implementation.
+  • Static `<img>` from `public/` keeps the tree-shaken JS bundle out of
+    the asset path and avoids a re-render cost on every layout repaint.
+  • Color flexibility is not needed here — the brand is fixed green.
+
+Verification
+------------
+- `(cd frontend && npm run build)` -> succeeds (tsc + vite build green).
+- `dist/favicon.svg` matches the committed source (Vite copied the
+  static asset through unchanged).
+- Backend untouched, so no Maven build or test run.
+- Manual dev-server check is the only test step in the task and is the
+  user's responsibility to run; the asset and JSX wiring are in place
+  for it to pass.
+
+Follow-up risk
+--------------
+- The leaf is rendered as a fixed-color SVG. If a future task introduces
+  a dark theme, the `#4a8b6f` / `#335f4d` colors will not auto-invert.
+  At that point the right move is to inline the SVG with `currentColor`
+  in `AuthLayout` / `AppShell` and keep a fixed-color copy in
+  `public/favicon.svg` for the browser tab.
+- TASK-093 is now done. Next pending task in the chain is TASK-094
+  (PATCH /api/projects/{projectId}, priority: high, workspace_project,
+  backend).

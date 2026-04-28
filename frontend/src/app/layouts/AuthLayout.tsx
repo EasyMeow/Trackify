@@ -22,17 +22,33 @@ export function AuthLayout({ children }: { children: ReactNode }) {
           gap: 'var(--space-6)',
         }}
       >
-        <span
+        <div
           style={{
-            textAlign: 'center',
-            fontSize: 'var(--font-size-2xl)',
-            fontWeight: 'var(--font-weight-semibold)',
-            color: 'var(--color-accent)',
-            letterSpacing: '-0.5px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 'var(--space-2)',
           }}
         >
-          Trackify
-        </span>
+          <img
+            src="/favicon.svg"
+            alt=""
+            aria-hidden="true"
+            width={28}
+            height={28}
+            style={{ display: 'block' }}
+          />
+          <span
+            style={{
+              fontSize: 'var(--font-size-2xl)',
+              fontWeight: 'var(--font-weight-semibold)',
+              color: 'var(--color-accent)',
+              letterSpacing: '-0.5px',
+            }}
+          >
+            Trackify
+          </span>
+        </div>
         {children}
       </div>
     </div>

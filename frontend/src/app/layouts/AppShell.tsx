@@ -98,16 +98,32 @@ export function AppShell({ children }: { children: ReactNode }) {
           padding: 'var(--space-4)',
         }}
       >
-        <span
+        <div
           style={{
-            fontSize: 'var(--font-size-lg)',
-            fontWeight: 'var(--font-weight-semibold)',
-            color: 'var(--color-accent)',
-            letterSpacing: '-0.3px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 'var(--space-2)',
           }}
         >
-          Trackify
-        </span>
+          <img
+            src="/favicon.svg"
+            alt=""
+            aria-hidden="true"
+            width={22}
+            height={22}
+            style={{ display: 'block' }}
+          />
+          <span
+            style={{
+              fontSize: 'var(--font-size-lg)',
+              fontWeight: 'var(--font-weight-semibold)',
+              color: 'var(--color-accent)',
+              letterSpacing: '-0.3px',
+            }}
+          >
+            Trackify
+          </span>
+        </div>
         <WorkspaceSwitcher />
         <SignOutControl />
       </aside>
