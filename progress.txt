@@ -3460,3 +3460,61 @@ DB and `drawer.status` would render as `Todo`.
   CHECK ever drifts from `COLUMN_NAME_TO_STATUS`.
 - **TASK-091 is now unblocked.** Next pending task in the chain is the
   task drawer close-button alignment fix (priority: medium, frontend).
+
+================================================================================
+TASK-091 — Align task drawer close button with title input (DONE)
+================================================================================
+
+Scope
+-----
+Polish task. The close button on the task drawer was visibly smaller than
+the title input and not vertically aligned with it, because:
+  - `headerStyle` used `alignItems: 'flex-start'`, anchoring the button to
+    the top of the title row regardless of input height.
+  - `closeBtnStyle` used `font-size-sm` (13px) with `lineHeight: 1`, while
+    the title input uses `font-size-xl` (20px) with `line-height-snug`
+    (1.35), producing a button roughly 23px tall next to a ~37px input.
+
+Changes
+-------
+File: frontend/src/modules/task/components/TaskDrawer.tsx
+  - `headerStyle.alignItems`: 'flex-start' -> 'center' so the button is
+    vertically centered with the title input row.
+  - `closeBtnStyle`:
+      fontSize       sm  -> xl              (matches title input)
+      lineHeight     1   -> snug (1.35)     (matches title input)
+      added fontWeight: medium              (slightly heavier glyph so the
+                                              ✕ reads at the larger size)
+      added aspectRatio: '1 / 1'            (square button so its height
+                                              equals the input height and
+                                              it doesn't grow wider)
+      added display: inline-flex + center   (centers the ✕ glyph inside
+                                              the now-larger square)
+
+Math: title input total height = 20px font * 1.35 line-height + 4px*2
+padding + 1px*2 border = 37px. Close button uses the same vertical
+padding/font/line-height, so its height also resolves to 37px, and the
+square aspectRatio gives it a 37x37 footprint that visually matches the
+end of the title input.
+
+The same `closeBtnStyle` is reused in the loading/error state header.
+There the surrounding text is smaller, so the button now appears taller
+than its neighbor in those transient states; that's an accepted side
+effect — the acceptance criterion is alignment with the title input,
+which is the steady-state header.
+
+Verification
+------------
+- `(cd frontend && npm run build)` -> passes (tsc + vite build green).
+- Backend untouched, so no Maven build run.
+
+Follow-up risk
+--------------
+- None expected. Pure CSS in inline styles; no new tokens introduced; the
+  ✕ glyph still renders inside the button thanks to the inline-flex
+  centering. The aspectRatio property has full coverage in evergreen
+  browsers and Safari 15+, which the rest of the SPA already targets.
+
+- **TASK-091 is now done.** Next pending task in the chain is TASK-092
+  (replace the default Vite document title `frontend` with `Trackify`,
+  priority: medium, frontend).

@@ -55,7 +55,7 @@ const panelStyle: React.CSSProperties = {
 
 const headerStyle: React.CSSProperties = {
   display: 'flex',
-  alignItems: 'flex-start',
+  alignItems: 'center',
   justifyContent: 'space-between',
   gap: 'var(--space-3)',
   padding: 'var(--space-5) var(--space-5) var(--space-3)',
@@ -65,13 +65,18 @@ const headerStyle: React.CSSProperties = {
 const closeBtnStyle: React.CSSProperties = {
   flexShrink: 0,
   padding: 'var(--space-1) var(--space-2)',
-  fontSize: 'var(--font-size-sm)',
+  fontSize: 'var(--font-size-xl)',
+  fontWeight: 'var(--font-weight-medium)',
+  lineHeight: 'var(--line-height-snug)',
   color: 'var(--color-text-muted)',
   backgroundColor: 'transparent',
   border: '1px solid var(--color-border)',
   borderRadius: 'var(--radius-md)',
   cursor: 'pointer',
-  lineHeight: 1,
+  aspectRatio: '1 / 1',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
 };
 
 const bodyStyle: React.CSSProperties = {
