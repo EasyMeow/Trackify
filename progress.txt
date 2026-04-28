@@ -3629,3 +3629,17 @@ Follow-up risk
 - TASK-093 is now done. Next pending task in the chain is TASK-094
   (PATCH /api/projects/{projectId}, priority: high, workspace_project,
   backend).
+
+## 2026-04-28 — TASK-094: PATCH /api/projects/{projectId}
+
+What changed:
+- Added `ProjectPatchRequest` record DTO (nullable `name`, `description` with `@Size` validation).
+- Added `ProjectUpdateService` — loads project, checks workspace membership, applies only non-null fields, saves, returns `ProjectResponse`.
+- Extended `ProjectByIdController` with `PATCH /{projectId}` handler wired to `ProjectUpdateService`.
+- Added `@MockitoBean ProjectUpdateService` to existing `ProjectByIdControllerTest` (it now needs both services).
+- Added new `ProjectPatchControllerTest` with 6 scenarios: happy path full update, partial name-only update, 404 missing project, 403 non-member, 400 blank name validation, 401 unauthenticated.
+- All 131 backend tests pass.
+
+Follow-up risk:
+- Slug is not updated when the name changes — this is intentional (slug is a stable identifier). Future tasks that surface the slug in the UI should note this.
+- TASK-095 (DELETE /api/projects/{projectId}) is next.

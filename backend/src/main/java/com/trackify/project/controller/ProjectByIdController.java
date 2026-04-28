@@ -2,11 +2,16 @@ package com.trackify.project.controller;
 
 import com.trackify.auth.application.LocalUserPrincipal;
 import com.trackify.project.application.ProjectQueryService;
+import com.trackify.project.application.ProjectUpdateService;
+import com.trackify.project.dto.ProjectPatchRequest;
 import com.trackify.project.dto.ProjectResponse;
 
+import jakarta.validation.Valid;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -29,9 +34,12 @@ import java.util.UUID;
 public class ProjectByIdController {
 
     private final ProjectQueryService projectQueryService;
+    private final ProjectUpdateService projectUpdateService;
 
-    public ProjectByIdController(ProjectQueryService projectQueryService) {
+    public ProjectByIdController(ProjectQueryService projectQueryService,
+                                 ProjectUpdateService projectUpdateService) {
         this.projectQueryService = projectQueryService;
+        this.projectUpdateService = projectUpdateService;
     }
 
     @GetMapping("/{projectId}")
@@ -39,5 +47,13 @@ public class ProjectByIdController {
             @PathVariable UUID projectId,
             @AuthenticationPrincipal LocalUserPrincipal principal) {
         return projectQueryService.getById(projectId, principal.userId());
+    }
+
+    @PatchMapping("/{projectId}")
+    public ProjectResponse patchProject(
+            @PathVariable UUID projectId,
+            @Valid @RequestBody ProjectPatchRequest request,
+            @AuthenticationPrincipal LocalUserPrincipal principal) {
+        return projectUpdateService.patch(projectId, principal.userId(), request);
     }
 }

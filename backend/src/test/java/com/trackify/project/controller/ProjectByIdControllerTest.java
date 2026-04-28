@@ -14,6 +14,7 @@ import com.trackify.config.JacksonConfig;
 import com.trackify.config.SecurityConfig;
 import com.trackify.config.WebConfig;
 import com.trackify.project.application.ProjectQueryService;
+import com.trackify.project.application.ProjectUpdateService;
 import com.trackify.project.dto.ProjectResponse;
 
 import org.junit.jupiter.api.Test;
@@ -58,6 +59,9 @@ class ProjectByIdControllerTest {
 
     @MockitoBean
     private ProjectQueryService projectQueryService;
+
+    @MockitoBean
+    private ProjectUpdateService projectUpdateService;
 
     @Test
     void memberReceivesProjectForFoundProject() throws Exception {
