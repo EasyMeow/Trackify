@@ -3,6 +3,8 @@ import { format, parseISO } from 'date-fns';
 import { useTaskDetail } from '../hooks/useTaskDetail';
 import { useUpdateTask } from '../hooks/useUpdateTask';
 import { useDeleteTask } from '../hooks/useDeleteTask';
+import { useCreateTask } from '../../kanban/hooks/useCreateTask';
+import type { CreateTaskRequest } from '../../kanban/api/taskApi';
 import type { TaskPriority, TaskResponse } from '../../kanban/types/task';
 import { CommentList } from '../../comment/components/CommentList';
 import { CommentComposer } from '../../comment/components/CommentComposer';
@@ -19,6 +21,7 @@ interface TaskDrawerProps {
   taskId: string | null;
   projectId: string;
   onClose: () => void;
+  createMode?: boolean;
 }
 
 function fmtDate(iso: string | null): string {
@@ -183,6 +186,23 @@ const cancelBtnStyle: React.CSSProperties = {
   cursor: 'pointer',
 };
 
+const saveBtnStyle: React.CSSProperties = {
+  padding: 'var(--space-2) var(--space-4)',
+  fontSize: 'var(--font-size-sm)',
+  fontWeight: 'var(--font-weight-semibold)',
+  color: 'var(--color-text-on-accent)',
+  backgroundColor: 'var(--color-accent)',
+  border: 'none',
+  borderRadius: 'var(--radius-md)',
+  cursor: 'pointer',
+};
+
+const saveBtnDisabledStyle: React.CSSProperties = {
+  ...saveBtnStyle,
+  opacity: 0.5,
+  cursor: 'not-allowed',
+};
+
 const statusBadgeStyle = (status: string): React.CSSProperties => ({
   display: 'inline-block',
   padding: '2px var(--space-2)',
@@ -251,6 +271,144 @@ const editControlStyle: React.CSSProperties = {
   fontFamily: 'inherit',
   lineHeight: 'var(--line-height-snug)',
 };
+
+// ---------- create mode content ----------
+
+interface CreateDrawerContentProps {
+  projectId: string;
+  onClose: () => void;
+}
+
+function CreateDrawerContent({ projectId, onClose }: CreateDrawerContentProps) {
+  const { mutate: createTask, isPending } = useCreateTask(projectId);
+  const [title, setTitle] = useState('');
+  const [titleError, setTitleError] = useState('');
+  const [description, setDescription] = useState('');
+  const [priority, setPriority] = useState<TaskPriority>('MEDIUM');
+  const [startDate, setStartDate] = useState('');
+  const [dueDate, setDueDate] = useState('');
+
+  function handleSave() {
+    const trimmed = title.trim();
+    if (!trimmed) {
+      setTitleError('Title is required.');
+      return;
+    }
+    setTitleError('');
+    const req: CreateTaskRequest = { title: trimmed, priority };
+    if (description.trim()) req.description = description.trim();
+    if (startDate) req.startDate = startDate;
+    if (dueDate) req.dueDate = dueDate;
+    createTask(req, { onSuccess: onClose });
+  }
+
+  const isSaveDisabled = isPending || !title.trim();
+
+  return (
+    <>
+      <div style={headerStyle}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <input
+            type="text"
+            value={title}
+            style={titleError ? editInputErrorStyle : editInputBaseStyle}
+            placeholder="Task title…"
+            maxLength={255}
+            disabled={isPending}
+            // eslint-disable-next-line jsx-a11y/no-autofocus
+            autoFocus
+            aria-label="Task title"
+            onChange={(e) => {
+              setTitle(e.target.value);
+              if (titleError && e.target.value.trim()) setTitleError('');
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); handleSave(); }
+            }}
+          />
+          {titleError && <p style={inlineErrorStyle}>{titleError}</p>}
+        </div>
+        <button type="button" style={closeBtnStyle} onClick={onClose} aria-label="Close task drawer">
+          ✕
+        </button>
+      </div>
+
+      <div style={bodyStyle}>
+        <div style={fieldStyle}>
+          <span style={labelStyle}>Description</span>
+          <textarea
+            value={description}
+            style={editTextareaStyle}
+            placeholder="No description"
+            disabled={isPending}
+            aria-label="Task description"
+            onChange={(e) => setDescription(e.target.value)}
+          />
+        </div>
+
+        <div style={metaRowStyle}>
+          <div style={fieldStyle}>
+            <span style={labelStyle}>Priority</span>
+            <select
+              style={editControlStyle}
+              value={priority}
+              disabled={isPending}
+              aria-label="Task priority"
+              onChange={(e) => setPriority(e.target.value as TaskPriority)}
+            >
+              {PRIORITY_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div style={metaRowStyle}>
+          <div style={fieldStyle}>
+            <span style={labelStyle}>Start date</span>
+            <input
+              type="date"
+              style={editControlStyle}
+              value={startDate}
+              disabled={isPending}
+              max={dueDate || undefined}
+              aria-label="Task start date"
+              onChange={(e) => setStartDate(e.target.value)}
+            />
+          </div>
+          <div style={fieldStyle}>
+            <span style={labelStyle}>Due date</span>
+            <input
+              type="date"
+              style={editControlStyle}
+              value={dueDate}
+              disabled={isPending}
+              min={startDate || undefined}
+              aria-label="Task due date"
+              onChange={(e) => setDueDate(e.target.value)}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div style={footerStyle}>
+        <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+          <button
+            type="button"
+            style={isSaveDisabled ? saveBtnDisabledStyle : saveBtnStyle}
+            disabled={isSaveDisabled}
+            onClick={handleSave}
+          >
+            {isPending ? 'Saving…' : 'Save'}
+          </button>
+          <button type="button" style={cancelBtnStyle} disabled={isPending} onClick={onClose}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
 
 // ---------- inner content (keyed by task id so useState initializers reset on new task) ----------
 
@@ -496,15 +654,17 @@ function DrawerContent({ data, taskId, projectId, onClose, registerCancelEdit }:
 
 // ---------- outer shell ----------
 
-export function TaskDrawer({ taskId, projectId, onClose }: TaskDrawerProps) {
+export function TaskDrawer({ taskId, projectId, onClose, createMode }: TaskDrawerProps) {
   const { data, isLoading, isError } = useTaskDetail(taskId);
 
   // cancelEditRef holds a function that DrawerContent registers when a field is focused.
   // The Escape handler calls it to cancel the edit instead of closing the drawer.
   const cancelEditRef = useRef<(() => void) | null>(null);
 
+  const isOpen = !!taskId || !!createMode;
+
   useEffect(() => {
-    if (!taskId) return;
+    if (!isOpen) return;
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape') {
         if (cancelEditRef.current) {
@@ -518,9 +678,9 @@ export function TaskDrawer({ taskId, projectId, onClose }: TaskDrawerProps) {
     }
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [taskId, onClose]);
+  }, [isOpen, onClose]);
 
-  if (!taskId) return null;
+  if (!isOpen) return null;
 
   const titleId = 'task-drawer-title';
 
@@ -533,7 +693,9 @@ export function TaskDrawer({ taskId, projectId, onClose }: TaskDrawerProps) {
         aria-labelledby={titleId}
         style={panelStyle}
       >
-        {(isLoading || isError || !data) ? (
+        {createMode && !taskId ? (
+          <CreateDrawerContent projectId={projectId} onClose={onClose} />
+        ) : (isLoading || isError || !data) ? (
           <div style={headerStyle}>
             <p
               id={titleId}
@@ -549,7 +711,7 @@ export function TaskDrawer({ taskId, projectId, onClose }: TaskDrawerProps) {
           <DrawerContent
             key={data.id}
             data={data}
-            taskId={taskId}
+            taskId={taskId!}
             projectId={projectId}
             onClose={onClose}
             registerCancelEdit={(fn) => { cancelEditRef.current = fn; }}
