@@ -12,6 +12,7 @@ import {
 import { useBoardQuery } from '../modules/kanban/hooks/useBoardQuery';
 import { useCreateTask } from '../modules/kanban/hooks/useCreateTask';
 import { useMoveTask } from '../modules/kanban/hooks/useMoveTask';
+import { ProjectNav } from '../modules/project/components/ProjectNav';
 import { BoardColumnView } from '../modules/kanban/components/BoardColumnView';
 import { TaskCard } from '../modules/kanban/components/TaskCard';
 import { useSelectedTaskId } from '../modules/task/hooks/useSelectedTaskId';
@@ -222,6 +223,7 @@ export default function ProjectBoardPage() {
 
   return (
     <section style={pageStyle}>
+      <ProjectNav projectId={projectId} />
       <h1 style={headingStyle}>Board</h1>
       <CreateTaskRow projectId={projectId} />
 

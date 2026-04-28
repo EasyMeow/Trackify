@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useWorkspaces } from '../modules/workspace/hooks/useWorkspaces';
 import { useProjects } from '../modules/project/hooks/useProjects';
 import { useCreateProject } from '../modules/project/hooks/useCreateProject';
@@ -33,6 +33,9 @@ const cardStyle = {
   border: '1px solid var(--color-border)',
   borderRadius: 'var(--radius-lg)',
   boxShadow: 'var(--shadow-xs)',
+  color: 'var(--color-text)',
+  textDecoration: 'none',
+  transition: 'border-color var(--transition-fast), box-shadow var(--transition-fast)',
 };
 
 const cardTitleStyle = {
@@ -232,10 +235,12 @@ function CreateProjectForm({ workspaceId }: { workspaceId: string }) {
 
 function ProjectCard({ project }: { project: Project }) {
   return (
-    <li style={cardStyle}>
-      <h2 style={cardTitleStyle}>{project.name}</h2>
-      <p style={cardSlugStyle}>{project.slug}</p>
-      {project.description && <p style={cardDescriptionStyle}>{project.description}</p>}
+    <li style={{ listStyle: 'none' }}>
+      <Link to={`/projects/${project.id}/board`} style={cardStyle}>
+        <h2 style={cardTitleStyle}>{project.name}</h2>
+        <p style={cardSlugStyle}>{project.slug}</p>
+        {project.description && <p style={cardDescriptionStyle}>{project.description}</p>}
+      </Link>
     </li>
   );
 }

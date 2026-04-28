@@ -2,6 +2,7 @@ import { useParams } from 'react-router-dom';
 import { format } from 'date-fns';
 import { useProject } from '../modules/project/hooks/useProject';
 import { useBoardQuery } from '../modules/kanban/hooks/useBoardQuery';
+import { ProjectNav } from '../modules/project/components/ProjectNav';
 
 // ─── styles ──────────────────────────────────────────────────────────────────
 
@@ -123,6 +124,7 @@ export default function ProjectSettingsPage() {
 
   return (
     <section style={pageStyle}>
+      <ProjectNav projectId={projectId} />
       <h1 style={{ margin: 0, fontSize: 'var(--font-size-2xl)', fontWeight: 'var(--font-weight-semibold)', color: 'var(--color-text)' }}>
         Project settings
       </h1>

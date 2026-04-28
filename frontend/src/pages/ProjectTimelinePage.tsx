@@ -6,6 +6,7 @@ import { format } from 'date-fns';
 import { useProjectTimeline } from '../modules/gantt/hooks/useProjectTimeline';
 import { useScheduleTask } from '../modules/gantt/hooks/useScheduleTask';
 import { mapTimelineToGantt } from '../modules/gantt/utils/mapTimelineToGantt';
+import { ProjectNav } from '../modules/project/components/ProjectNav';
 
 export default function ProjectTimelinePage() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -33,6 +34,7 @@ export default function ProjectTimelinePage() {
   if (isLoading) {
     return (
       <section style={sectionStyle}>
+        <ProjectNav projectId={projectId} />
         <h1>Project timeline</h1>
         <p style={mutedStyle}>Loading…</p>
       </section>
@@ -42,6 +44,7 @@ export default function ProjectTimelinePage() {
   if (error) {
     return (
       <section style={sectionStyle}>
+        <ProjectNav projectId={projectId} />
         <h1>Project timeline</h1>
         <p style={{ color: 'var(--color-danger)' }}>Failed to load timeline.</p>
       </section>
@@ -51,6 +54,7 @@ export default function ProjectTimelinePage() {
   if (!data || data.tasks.length === 0) {
     return (
       <section style={sectionStyle}>
+        <ProjectNav projectId={projectId} />
         <h1>Project timeline</h1>
         <p style={mutedStyle}>No tasks yet.</p>
       </section>
@@ -62,6 +66,7 @@ export default function ProjectTimelinePage() {
   if (ganttTasks.length === 0) {
     return (
       <section style={sectionStyle}>
+        <ProjectNav projectId={projectId} />
         <h1>Project timeline</h1>
         <p style={mutedStyle}>
           No tasks have start and due dates set ({datelessCount} task
@@ -73,6 +78,7 @@ export default function ProjectTimelinePage() {
 
   return (
     <section style={sectionStyle}>
+      <ProjectNav projectId={projectId} />
       <h1>Project timeline</h1>
       <Gantt
         tasks={ganttTasks}
