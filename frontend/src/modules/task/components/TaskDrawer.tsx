@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { format, parseISO } from 'date-fns';
 import { useTaskDetail } from '../hooks/useTaskDetail';
 import { useUpdateTask } from '../hooks/useUpdateTask';
+import { useDeleteTask } from '../hooks/useDeleteTask';
 import type { TaskPriority, TaskResponse } from '../../kanban/types/task';
 import { CommentList } from '../../comment/components/CommentList';
 import { CommentComposer } from '../../comment/components/CommentComposer';
@@ -129,6 +130,59 @@ const footerStyle: React.CSSProperties = {
   gap: 'var(--space-1)',
 };
 
+const deleteBtnStyle: React.CSSProperties = {
+  marginTop: 'var(--space-2)',
+  padding: 'var(--space-1) var(--space-3)',
+  fontSize: 'var(--font-size-xs)',
+  fontWeight: 'var(--font-weight-medium)',
+  color: 'var(--color-danger)',
+  backgroundColor: 'transparent',
+  border: '1px solid var(--color-danger)',
+  borderRadius: 'var(--radius-md)',
+  cursor: 'pointer',
+  alignSelf: 'flex-start',
+  opacity: 0.75,
+};
+
+const confirmOverlayStyle: React.CSSProperties = {
+  marginTop: 'var(--space-2)',
+  padding: 'var(--space-3)',
+  backgroundColor: 'var(--color-bg)',
+  border: '1px solid var(--color-border)',
+  borderRadius: 'var(--radius-md)',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 'var(--space-2)',
+};
+
+const confirmRowStyle: React.CSSProperties = {
+  display: 'flex',
+  gap: 'var(--space-2)',
+  alignItems: 'center',
+};
+
+const confirmBtnStyle: React.CSSProperties = {
+  padding: 'var(--space-1) var(--space-3)',
+  fontSize: 'var(--font-size-xs)',
+  fontWeight: 'var(--font-weight-medium)',
+  color: 'var(--color-surface)',
+  backgroundColor: 'var(--color-danger)',
+  border: 'none',
+  borderRadius: 'var(--radius-md)',
+  cursor: 'pointer',
+};
+
+const cancelBtnStyle: React.CSSProperties = {
+  padding: 'var(--space-1) var(--space-3)',
+  fontSize: 'var(--font-size-xs)',
+  fontWeight: 'var(--font-weight-medium)',
+  color: 'var(--color-text-muted)',
+  backgroundColor: 'transparent',
+  border: '1px solid var(--color-border)',
+  borderRadius: 'var(--radius-md)',
+  cursor: 'pointer',
+};
+
 const statusBadgeStyle = (status: string): React.CSSProperties => ({
   display: 'inline-block',
   padding: '2px var(--space-2)',
@@ -211,6 +265,8 @@ interface DrawerContentProps {
 
 function DrawerContent({ data, taskId, projectId, onClose, registerCancelEdit }: DrawerContentProps) {
   const { mutate: updateTask, isPending } = useUpdateTask(taskId, projectId);
+  const { mutate: deleteTask, isPending: isDeleting } = useDeleteTask(taskId, projectId);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   // draft values — only used while the field is focused; start from current server value
   const [titleDraft, setTitleDraft] = useState(data.title);
@@ -398,6 +454,41 @@ function DrawerContent({ data, taskId, projectId, onClose, registerCancelEdit }:
       <div style={footerStyle}>
         <span>Created: {fmtDate(data.createdAt)}</span>
         <span>Updated: {fmtDate(data.updatedAt)}</span>
+        {!confirmDelete && (
+          <button
+            type="button"
+            style={deleteBtnStyle}
+            disabled={isPending || isDeleting}
+            onClick={() => setConfirmDelete(true)}
+          >
+            Delete task
+          </button>
+        )}
+        {confirmDelete && (
+          <div style={confirmOverlayStyle}>
+            <span>Are you sure you want to delete this task?</span>
+            <div style={confirmRowStyle}>
+              <button
+                type="button"
+                style={confirmBtnStyle}
+                disabled={isDeleting}
+                onClick={() => {
+                  deleteTask(undefined, { onSuccess: onClose });
+                }}
+              >
+                {isDeleting ? 'Deleting…' : 'Delete'}
+              </button>
+              <button
+                type="button"
+                style={cancelBtnStyle}
+                disabled={isDeleting}
+                onClick={() => setConfirmDelete(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </>
   );

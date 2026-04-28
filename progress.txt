@@ -3874,3 +3874,27 @@ What was tested:
 
 Follow-up:
 - TASK-104 (frontend delete-task button in drawer) is unblocked and next.
+
+## 2026-04-28 — TASK-104: Delete-task button in task drawer
+
+What changed:
+- Added `deleteTask(taskId)` to `taskDetailApi.ts` calling `httpClient.del`.
+- Created `useDeleteTask.ts` mutation hook: calls DELETE /api/tasks/{taskId},
+  then removes cached task query, invalidates board and timeline queries,
+  shows error toast on failure.
+- `TaskDrawer.tsx` / `DrawerContent`:
+  - Added `useDeleteTask` import and call.
+  - Added `confirmDelete` boolean state.
+  - Footer now renders a muted "Delete task" button (danger color, low opacity,
+    transparent background, fits pastel palette).
+  - Clicking it shows an inline confirmation box ("Are you sure you want to
+    delete this task?" + Delete / Cancel buttons).
+  - On confirm: `deleteTask()` is called; `onSuccess` callback calls `onClose`
+    which clears the `taskId` URL param (TASK-053 mechanism).
+  - Delete/Cancel disabled while mutation is in-flight.
+
+What was tested:
+- `npm run build` → 448 modules, 0 errors.
+
+Follow-up:
+- TASK-105 (move task creation into drawer, remove inline board input) is next.

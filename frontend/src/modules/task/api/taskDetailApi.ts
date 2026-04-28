@@ -9,4 +9,7 @@ export const taskDetailApi = {
   updateTask(taskId: string, request: UpdateTaskRequest): Promise<TaskResponse> {
     return httpClient.patch<TaskResponse>(`/tasks/${taskId}`, request);
   },
+  deleteTask(taskId: string): Promise<void> {
+    return httpClient.del<void>(`/tasks/${taskId}`);
+  },
 };
