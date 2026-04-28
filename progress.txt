@@ -3151,3 +3151,29 @@ TASK-083's acceptance is "the full smoke checklist has been run once locally and
   - Watch out: backend may return either error code `VALIDATION_FAILED` (DTO-level) or `BAD_REQUEST` (service-level password length). The hook should display `ApiError.message` rather than switch on the code.
 - **TASK-086** (SignUpPage) and **TASK-087** (cross-link) follow naturally; nothing in TASK-084 pre-empts their scope.
 - **No Flyway migration.** The `users` table from TASK-021 already has every column the registration writes to. No DB schema change.
+
+## 2026-04-28 — TASK-085: Add frontend register API client and `useRegister` hook
+
+### Files changed
+
+- `frontend/src/modules/auth/types/auth.ts` — added `RegisterRequest` interface (`login`, `email`, `displayName`, `password`) matching the backend `RegisterRequest` record.
+- `frontend/src/modules/auth/api/authApi.ts` — added `register(payload: RegisterRequest): Promise<AuthUser>` posting to `/auth/register` through the shared `httpClient`. Returns `AuthUser` because the backend returns the same `MeResponse` shape on 201 that `/api/me` returns.
+- `frontend/src/modules/auth/hooks/useRegister.ts` — new file. `useRegister()` is a TanStack Query `useMutation<AuthUser, ApiError, RegisterRequest>` that, on success, seeds `queryKeys.auth.me` via `queryClient.setQueryData(...)` so `AuthProvider` hydrates without a follow-up `/api/me` round-trip. `ApiError` instances thrown by `httpClient` propagate through the mutation's `error` state so consumers (TASK-086 SignUpPage) display `error.message` directly.
+
+### Key decisions
+
+- **No bespoke error normalization.** `httpClient` already throws `ApiError`; typing the mutation as `useMutation<AuthUser, ApiError, RegisterRequest>` makes the error available via `mutation.error.message` and `mutation.error.code`. Surfacing additional state (e.g. parsed-out validation field maps) would belong in TASK-086 if the form needs per-field highlighting.
+- **No `AuthProvider` modification.** The provider's `meQuery` reads `queryKeys.auth.me`; seeding that key on register-success is enough to flip status to `authenticated` on the next render. This avoids duplicating session bootstrap logic and keeps `AuthProvider`'s contract unchanged for TASK-086.
+- **No SignUpPage / route changes.** Out of TASK-085 scope (TASK-086 owns those).
+
+### What was tested
+
+- `frontend-developer` agent ran `npm run build` → succeeded (TypeScript passes, Vite bundles 437 modules).
+- `frontend-developer` agent ran `npm run lint` → only pre-existing `react-refresh/only-export-components` warnings on `src/app/routes.tsx` lines 11 and 21 (the `AuthLayoutRoute` / `AppShellRoute` non-exported components from TASK-019 routing). Verified pre-existing by stashing TASK-085 changes and re-running lint on the clean tree — identical errors. No new lint targets introduced.
+
+### Follow-up risks / notes
+
+- **TASK-086 is now unblocked.** SignUpPage should call `useRegister()` and on success rely on the seeded cache (no follow-up `await refresh()` needed) before `navigate('/')` lands the user on the dashboard.
+- **Backend error codes the form will see** (per TASK-084 progress note): `VALIDATION_FAILED` (DTO-level: blank fields, malformed email), `BAD_REQUEST` (service-level: password shorter than `AUTH_PASSWORD_MIN_LENGTH`), `DUPLICATE_LOGIN` (409). The hook returns the raw `ApiError` so the form can either show `error.message` directly or branch on `error.code` if it wants per-error-class messaging.
+- **`useRegister` does not invalidate other query keys.** That is intentional: a brand-new user's other caches are empty, so there is nothing to invalidate. If TASK-086 later races with workspace queries, the AuthProvider's `meQuery` becoming `authenticated` will cause downstream queries to fire fresh anyway.
+

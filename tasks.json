@@ -1612,7 +1612,7 @@
       "dependencies": [
         "TASK-084"
       ],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-086",

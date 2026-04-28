@@ -4,6 +4,7 @@ import type {
   LoginRequest,
   LoginResponse,
   LogoutResponse,
+  RegisterRequest,
 } from '../types/auth';
 
 export const authApi = {
@@ -15,5 +16,8 @@ export const authApi = {
   },
   logout(): Promise<LogoutResponse> {
     return httpClient.post<LogoutResponse>('/logout');
+  },
+  register(payload: RegisterRequest): Promise<AuthUser> {
+    return httpClient.post<AuthUser>('/auth/register', payload);
   },
 };
