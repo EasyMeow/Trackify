@@ -3681,3 +3681,24 @@ What was tested:
 Follow-up risk:
 - Slug is intentionally not editable (stable identifier). If a future task exposes slug editing, routing that uses slug-based URLs will need a redirect strategy.
 - TASK-097 (project deletion from settings page) is next.
+
+## 2026-04-28 — TASK-097: Project deletion from settings page (typed-name confirmation)
+
+What changed:
+- `projectApi.ts`: added `delete(projectId)` method calling `httpClient.del`.
+- `useDeleteProject.ts` (new): mutation hook that calls `projectApi.delete`, on success removes the project query and invalidates the workspace projects list.
+- `ProjectSettingsPage.tsx`:
+  - Added `useNavigate` and `useDeleteProject` imports.
+  - Added `showDeleteModal` and `deleteConfirmName` state.
+  - Added `handleDeleteConfirm` (fires mutation, navigates to `/` on success) and `handleDeleteModalClose` handlers.
+  - Added a "Danger zone" section (red border, separated visually) with a "Delete project" button.
+  - Added an overlay modal: asks user to type the exact project name; confirm button is disabled until the typed value matches; clicking outside or Cancel closes the modal.
+  - Added all associated style objects (dangerSectionStyle, overlayStyle, modalStyle, etc.).
+
+What was tested:
+- `npm run build` — TypeScript + Vite build, 442 modules, no errors.
+- Manual UI test (user-run per task spec): open settings, click "Delete project", observe modal, type project name, confirm, verify navigation to dashboard and project removed from list.
+
+Follow-up risk:
+- The overlay click-outside handler closes the modal even during a pending deletion — that's acceptable since the mutation is in-flight and the UI shows "Deleting…" state, which prevents double-submission.
+- TASK-098 (POST /api/projects/{projectId}/columns) is next.

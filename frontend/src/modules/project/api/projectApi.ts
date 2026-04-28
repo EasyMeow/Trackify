@@ -31,4 +31,8 @@ export const projectApi = {
   update(projectId: string, request: ProjectUpdateRequest): Promise<Project> {
     return httpClient.patch<Project>(`/projects/${projectId}`, request);
   },
+
+  delete(projectId: string): Promise<void> {
+    return httpClient.del<void>(`/projects/${projectId}`);
+  },
 };

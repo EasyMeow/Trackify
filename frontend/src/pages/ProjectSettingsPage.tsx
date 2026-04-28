@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { useProject } from '../modules/project/hooks/useProject';
 import { useUpdateProject } from '../modules/project/hooks/useUpdateProject';
+import { useDeleteProject } from '../modules/project/hooks/useDeleteProject';
 import { useBoardQuery } from '../modules/kanban/hooks/useBoardQuery';
 import { ProjectNav } from '../modules/project/components/ProjectNav';
 
@@ -145,10 +146,116 @@ const tdMutedStyle: React.CSSProperties = {
   color: 'var(--color-text-subtle)',
 };
 
+const dangerSectionStyle: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 'var(--space-3)',
+  padding: 'var(--space-5)',
+  backgroundColor: 'var(--color-surface)',
+  border: '1px solid var(--color-danger)',
+  borderRadius: 'var(--radius-lg)',
+  boxShadow: 'var(--shadow-xs)',
+};
+
+const dangerHeadingStyle: React.CSSProperties = {
+  ...sectionHeadingStyle,
+  color: 'var(--color-danger)',
+  borderBottomColor: 'var(--color-danger)',
+  opacity: 0.8,
+};
+
+const dangerDescStyle: React.CSSProperties = {
+  fontSize: 'var(--font-size-sm)',
+  color: 'var(--color-text-muted)',
+  margin: 0,
+};
+
+const deleteButtonStyle: React.CSSProperties = {
+  padding: 'var(--space-2) var(--space-4)',
+  fontSize: 'var(--font-size-sm)',
+  fontWeight: 'var(--font-weight-medium)',
+  color: 'var(--color-danger)',
+  backgroundColor: 'transparent',
+  border: '1px solid var(--color-danger)',
+  borderRadius: 'var(--radius-md)',
+  cursor: 'pointer',
+};
+
+const overlayStyle: React.CSSProperties = {
+  position: 'fixed',
+  inset: 0,
+  backgroundColor: 'rgba(0,0,0,0.4)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  zIndex: 1000,
+};
+
+const modalStyle: React.CSSProperties = {
+  backgroundColor: 'var(--color-surface)',
+  border: '1px solid var(--color-border)',
+  borderRadius: 'var(--radius-lg)',
+  boxShadow: 'var(--shadow-lg)',
+  padding: 'var(--space-6)',
+  maxWidth: '440px',
+  width: '90%',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 'var(--space-4)',
+};
+
+const modalTitleStyle: React.CSSProperties = {
+  margin: 0,
+  fontSize: 'var(--font-size-md)',
+  fontWeight: 'var(--font-weight-semibold)',
+  color: 'var(--color-text)',
+};
+
+const modalDescStyle: React.CSSProperties = {
+  fontSize: 'var(--font-size-sm)',
+  color: 'var(--color-text-muted)',
+  margin: 0,
+  lineHeight: '1.5',
+};
+
+const modalActionsStyle: React.CSSProperties = {
+  display: 'flex',
+  gap: 'var(--space-2)',
+  justifyContent: 'flex-end',
+};
+
+const cancelButtonStyle: React.CSSProperties = {
+  padding: 'var(--space-2) var(--space-4)',
+  fontSize: 'var(--font-size-sm)',
+  color: 'var(--color-text-muted)',
+  backgroundColor: 'transparent',
+  border: '1px solid var(--color-border)',
+  borderRadius: 'var(--radius-md)',
+  cursor: 'pointer',
+};
+
+const confirmDeleteButtonStyle: React.CSSProperties = {
+  padding: 'var(--space-2) var(--space-4)',
+  fontSize: 'var(--font-size-sm)',
+  fontWeight: 'var(--font-weight-medium)',
+  color: '#fff',
+  backgroundColor: 'var(--color-danger)',
+  border: 'none',
+  borderRadius: 'var(--radius-md)',
+  cursor: 'pointer',
+};
+
+const confirmDeleteButtonDisabledStyle: React.CSSProperties = {
+  ...confirmDeleteButtonStyle,
+  opacity: 0.4,
+  cursor: 'not-allowed',
+};
+
 // ─── component ───────────────────────────────────────────────────────────────
 
 export default function ProjectSettingsPage() {
   const { projectId } = useParams<{ projectId: string }>();
+  const navigate = useNavigate();
 
   const {
     data: project,
@@ -157,6 +264,7 @@ export default function ProjectSettingsPage() {
   } = useProject(projectId);
 
   const updateProject = useUpdateProject(projectId!);
+  const deleteProject = useDeleteProject(projectId!, project?.workspaceId ?? '');
 
   const {
     data: board,
@@ -166,6 +274,8 @@ export default function ProjectSettingsPage() {
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteConfirmName, setDeleteConfirmName] = useState('');
 
   useEffect(() => {
     if (project) {
@@ -184,6 +294,20 @@ export default function ProjectSettingsPage() {
       name: name.trim(),
       description: description.trim() || null,
     });
+  }
+
+  function handleDeleteConfirm() {
+    if (!project || deleteConfirmName !== project.name) return;
+    deleteProject.mutate(undefined, {
+      onSuccess: () => {
+        navigate('/');
+      },
+    });
+  }
+
+  function handleDeleteModalClose() {
+    setShowDeleteModal(false);
+    setDeleteConfirmName('');
   }
 
   return (
@@ -292,6 +416,63 @@ export default function ProjectSettingsPage() {
           </table>
         )}
       </div>
+
+      {/* ── danger zone ── */}
+      {project && (
+        <div style={dangerSectionStyle}>
+          <h2 style={dangerHeadingStyle}>Danger zone</h2>
+          <p style={dangerDescStyle}>
+            Permanently delete this project and all of its board columns, tasks, comments,
+            and dependencies. This action cannot be undone.
+          </p>
+          <div>
+            <button style={deleteButtonStyle} onClick={() => setShowDeleteModal(true)}>
+              Delete project
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── delete confirmation modal ── */}
+      {showDeleteModal && project && (
+        <div style={overlayStyle} onClick={handleDeleteModalClose}>
+          <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
+            <h3 style={modalTitleStyle}>Delete "{project.name}"?</h3>
+            <p style={modalDescStyle}>
+              This will permanently delete the project and all of its data. To confirm, type the
+              project name below.
+            </p>
+            <input
+              style={inputStyle}
+              value={deleteConfirmName}
+              onChange={(e) => setDeleteConfirmName(e.target.value)}
+              placeholder={project.name}
+              autoFocus
+              disabled={deleteProject.isPending}
+            />
+            <div style={modalActionsStyle}>
+              <button
+                style={cancelButtonStyle}
+                onClick={handleDeleteModalClose}
+                disabled={deleteProject.isPending}
+              >
+                Cancel
+              </button>
+              <button
+                style={
+                  deleteConfirmName === project.name && !deleteProject.isPending
+                    ? confirmDeleteButtonStyle
+                    : confirmDeleteButtonDisabledStyle
+                }
+                onClick={handleDeleteConfirm}
+                disabled={deleteConfirmName !== project.name || deleteProject.isPending}
+              >
+                {deleteProject.isPending ? 'Deleting…' : 'Delete project'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
