@@ -1656,6 +1656,626 @@
         "TASK-086"
       ],
       "status": "done"
+    },
+    {
+      "id": "TASK-088",
+      "phase": "Bug fixes",
+      "category": "auth",
+      "priority": "critical",
+      "description": "Fix `Sign out` so it ends the SPA session without requiring a manual page reload.",
+      "start_condition": "Clicking `Sign out` ends the server session but the SPA keeps the previous user state until the page is reloaded.",
+      "acceptance_criteria": [
+        "Clicking `Sign out` clears the cached `/api/me` value, redirects the user to `/sign-in`, and the app no longer shows authenticated UI without a manual reload."
+      ],
+      "test_steps": [
+        "Run the dev server, sign in, click `Sign out`, and confirm the app redirects to the sign-in page immediately without a manual reload."
+      ],
+      "dependencies": [
+        "TASK-087"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "TASK-089",
+      "phase": "Bug fixes",
+      "category": "dependencies",
+      "priority": "critical",
+      "description": "Fix the server error returned when adding a `depend on` relation to a task.",
+      "start_condition": "Calling the dependency-create endpoint from the UI returns a server error instead of creating the dependency.",
+      "acceptance_criteria": [
+        "Adding a dependency through the UI succeeds without a server error and the new dependency appears in the timeline payload and on the Gantt view after reload."
+      ],
+      "test_steps": [
+        "From the task drawer or timeline, add a dependency on another task and confirm the request succeeds and the link line is rendered after reload."
+      ],
+      "dependencies": [
+        "TASK-088"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-090",
+      "phase": "Bug fixes",
+      "category": "kanban",
+      "priority": "critical",
+      "description": "Fix the bug where dragging a task to a new column on the Kanban board does not change the persisted task status.",
+      "start_condition": "Dragging a card to a different column updates ordering but the task's persisted status stays at the previous value.",
+      "acceptance_criteria": [
+        "After moving a card across columns, the persisted task status reflects the destination column and matches what is shown in the drawer and list views."
+      ],
+      "test_steps": [
+        "Move a task across columns, reload, open the task drawer, and confirm the status field matches the destination column."
+      ],
+      "dependencies": [
+        "TASK-089"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-091",
+      "phase": "Bug fixes",
+      "category": "polish",
+      "priority": "medium",
+      "description": "Align the task drawer's close button so its size and vertical centering match the title input.",
+      "start_condition": "The close button on the task edit drawer is visibly smaller than the title input and not vertically aligned with it.",
+      "acceptance_criteria": [
+        "The close button is visually aligned with the title field — same vertical baseline and proportional sizing relative to the title input."
+      ],
+      "test_steps": [
+        "Open the task drawer and confirm the close button is centered with the title row at multiple viewport widths."
+      ],
+      "dependencies": [
+        "TASK-090"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-092",
+      "phase": "Branding",
+      "category": "frontend",
+      "priority": "medium",
+      "description": "Replace the default Vite document title `frontend` with `Trackify`.",
+      "start_condition": "The browser tab title shows `frontend` instead of `Trackify`.",
+      "acceptance_criteria": [
+        "`index.html` sets `<title>Trackify</title>` and the browser tab shows `Trackify` on every route."
+      ],
+      "test_steps": [
+        "Run the dev server, navigate across routes, and confirm the browser tab reads `Trackify` everywhere."
+      ],
+      "dependencies": [
+        "TASK-091"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-093",
+      "phase": "Branding",
+      "category": "frontend",
+      "priority": "medium",
+      "description": "Add a green leaf SVG logo and wire it as the favicon and the in-app logo.",
+      "start_condition": "The app uses the default Vite favicon and has no shared logo asset.",
+      "acceptance_criteria": [
+        "An SVG green leaf asset lives under `frontend/public/` (or the equivalent) and is referenced as the favicon in `index.html`.",
+        "The same SVG is used as the app logo in `AuthLayout` and in the sidebar header so the brand mark is visible to both signed-out and signed-in users."
+      ],
+      "test_steps": [
+        "Run the dev server and confirm a green leaf appears as the browser favicon and as the in-app logo on both auth pages and inside the app shell."
+      ],
+      "dependencies": [
+        "TASK-092"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-094",
+      "phase": "Editable project settings",
+      "category": "workspace_project",
+      "priority": "high",
+      "description": "Implement `PATCH /api/projects/{projectId}` for partial project updates.",
+      "start_condition": "Project metadata can be created and read but not updated through the API.",
+      "acceptance_criteria": [
+        "`PATCH /api/projects/{projectId}` accepts partial updates for `name` and `description` and persists them.",
+        "The endpoint enforces project membership and returns the standard `ApiError` shape for 401, 403, and 404 cases."
+      ],
+      "test_steps": [
+        "Add a controller test proving a partial update changes only the provided fields and rejects edits from a user outside the workspace."
+      ],
+      "dependencies": [
+        "TASK-093"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-095",
+      "phase": "Editable project settings",
+      "category": "workspace_project",
+      "priority": "high",
+      "description": "Implement `DELETE /api/projects/{projectId}` with cascade for columns, tasks, comments, and dependencies.",
+      "start_condition": "Projects cannot be deleted from the API.",
+      "acceptance_criteria": [
+        "`DELETE /api/projects/{projectId}` removes the project and all dependent rows (board columns, tasks, comments, dependencies on either side) in a single transaction.",
+        "The endpoint enforces project membership and returns the standard `ApiError` shape for 401, 403, and 404 cases."
+      ],
+      "test_steps": [
+        "Add a controller test proving the project and its child rows are deleted while sibling projects in the workspace remain untouched."
+      ],
+      "dependencies": [
+        "TASK-094"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-096",
+      "phase": "Editable project settings",
+      "category": "frontend",
+      "priority": "high",
+      "description": "Make `ProjectSettingsPage` editable for project name and description.",
+      "start_condition": "`ProjectSettingsPage` only displays project metadata in read-only form.",
+      "acceptance_criteria": [
+        "Editing name or description on the settings page calls the project update endpoint and reflects the new values across the app (sidebar, dashboard, breadcrumbs) after save."
+      ],
+      "test_steps": [
+        "Edit the project name in the UI, save, reload the page, and confirm the new name is shown in both the settings page and the dashboard project list."
+      ],
+      "dependencies": [
+        "TASK-095"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-097",
+      "phase": "Editable project settings",
+      "category": "frontend",
+      "priority": "high",
+      "description": "Add project deletion to the settings page with a GitHub-style typed-name confirmation.",
+      "start_condition": "Users cannot delete a project from the UI.",
+      "acceptance_criteria": [
+        "`ProjectSettingsPage` exposes a clearly separated destructive `Delete project` action.",
+        "Clicking it opens a modal that requires the user to type the exact project name; the confirm button is disabled until the typed value matches.",
+        "On success the user is navigated to the dashboard and the project no longer appears in the project list."
+      ],
+      "test_steps": [
+        "Open settings for a test project, type the exact project name in the modal, confirm deletion, and verify the project disappears from the dashboard after reload."
+      ],
+      "dependencies": [
+        "TASK-096"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-098",
+      "phase": "Custom board columns",
+      "category": "board",
+      "priority": "high",
+      "description": "Implement `POST /api/projects/{projectId}/columns` to create a new board column.",
+      "start_condition": "Board columns are auto-created on project setup and cannot be added later.",
+      "acceptance_criteria": [
+        "`POST /api/projects/{projectId}/columns` creates a column with the given `name`, appended to the end of the project's column order.",
+        "Membership is enforced and the endpoint returns standard 401, 403, and 404 errors using the `ApiError` shape."
+      ],
+      "test_steps": [
+        "Add a controller test proving the new column is appended to the column order for the project."
+      ],
+      "dependencies": [
+        "TASK-097"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-099",
+      "phase": "Custom board columns",
+      "category": "board",
+      "priority": "high",
+      "description": "Implement `PATCH /api/projects/{projectId}/columns/{columnId}` to rename a board column.",
+      "start_condition": "Column names are fixed once auto-created.",
+      "acceptance_criteria": [
+        "`PATCH /api/projects/{projectId}/columns/{columnId}` updates the column name when the user has project membership.",
+        "Standard 401, 403, and 404 errors are returned using the `ApiError` shape."
+      ],
+      "test_steps": [
+        "Add a controller test proving the column name is updated and that cross-project edits are rejected."
+      ],
+      "dependencies": [
+        "TASK-098"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-100",
+      "phase": "Custom board columns",
+      "category": "board",
+      "priority": "high",
+      "description": "Implement `DELETE /api/projects/{projectId}/columns/{columnId}` and reject deletion of non-empty columns.",
+      "start_condition": "Columns cannot be deleted.",
+      "acceptance_criteria": [
+        "`DELETE /api/projects/{projectId}/columns/{columnId}` removes the column when no tasks reference it.",
+        "If the column still has tasks, the endpoint returns HTTP 409 with the `ApiError` shape and a message indicating the column must be emptied first."
+      ],
+      "test_steps": [
+        "Add controller tests for both the empty-column happy path and the non-empty conflict case."
+      ],
+      "dependencies": [
+        "TASK-099"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-101",
+      "phase": "Custom board columns",
+      "category": "board",
+      "priority": "high",
+      "description": "Implement a reorder endpoint for board columns of a project.",
+      "start_condition": "Column order is fixed by creation order.",
+      "acceptance_criteria": [
+        "`PATCH /api/projects/{projectId}/columns/order` accepts the full ordering of existing column ids and persists it atomically.",
+        "Bad input (unknown ids, missing ids, duplicates) returns HTTP 400 with the `ApiError` shape."
+      ],
+      "test_steps": [
+        "Add a controller test proving the persisted column order matches the request after success and that bad payloads are rejected with 400."
+      ],
+      "dependencies": [
+        "TASK-100"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-102",
+      "phase": "Custom board columns",
+      "category": "frontend",
+      "priority": "high",
+      "description": "Wire the board UI to manage columns: add, rename, reorder, and delete.",
+      "start_condition": "The board renders columns but cannot manage them.",
+      "acceptance_criteria": [
+        "An `Add column` control creates a new column at the end of the board and refreshes the board.",
+        "Each column header supports inline rename and a delete action that surfaces a friendly toast when the column is non-empty.",
+        "Columns can be reordered by drag-and-drop, persisted via the reorder endpoint, with optimistic state and rollback on failure."
+      ],
+      "test_steps": [
+        "Add, rename, reorder, and delete columns in the UI and confirm changes survive a page reload.",
+        "Try deleting a non-empty column and confirm a toast explains it must be emptied first."
+      ],
+      "dependencies": [
+        "TASK-101"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-103",
+      "phase": "Task deletion",
+      "category": "task",
+      "priority": "high",
+      "description": "Implement `DELETE /api/tasks/{taskId}` with cleanup of comments and dependencies.",
+      "start_condition": "Tasks cannot be deleted from the API.",
+      "acceptance_criteria": [
+        "`DELETE /api/tasks/{taskId}` removes the task, its comments, and any dependency rows where the task appears as either source or target, in a single transaction.",
+        "Standard 401, 403, and 404 responses use the `ApiError` shape."
+      ],
+      "test_steps": [
+        "Add a controller test proving deletion removes incoming and outgoing dependencies as well as the task and its comments."
+      ],
+      "dependencies": [
+        "TASK-102"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-104",
+      "phase": "Task deletion",
+      "category": "frontend",
+      "priority": "high",
+      "description": "Add a delete-task button at the bottom of the task drawer with a simple confirmation prompt.",
+      "start_condition": "The drawer cannot delete a task.",
+      "acceptance_criteria": [
+        "The drawer shows a `Delete task` button at the bottom in a muted destructive accent that fits the existing pastel palette.",
+        "Clicking it opens a small `Are you sure you want to delete this task?` confirmation; on confirm the drawer closes, the task is removed from board, list view, and timeline, and the drawer URL state is cleared."
+      ],
+      "test_steps": [
+        "Delete a task from the drawer and confirm it disappears from the board, list view, and Gantt view immediately and after reload."
+      ],
+      "dependencies": [
+        "TASK-103"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-105",
+      "phase": "Task creation flow",
+      "category": "frontend",
+      "priority": "high",
+      "description": "Move task creation into the task drawer with a `Save` action and remove the inline title input on the board.",
+      "start_condition": "The board has an inline title input plus an add button to create tasks.",
+      "acceptance_criteria": [
+        "The board no longer renders a title input; only a `Create task` action remains.",
+        "Clicking `Create task` opens the drawer (same component as edit) with empty fields and a primary `Save` button instead of `Update`.",
+        "Saving a new task adds it to the appropriate column and refreshes the board, with the drawer closing on success."
+      ],
+      "test_steps": [
+        "Create a task using the new flow and confirm it appears on the board, list view, and timeline, and persists after reload."
+      ],
+      "dependencies": [
+        "TASK-104"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-106",
+      "phase": "Board views and filters",
+      "category": "frontend",
+      "priority": "high",
+      "description": "Add a Kanban/List view toggle on the project board page.",
+      "start_condition": "The board only supports the Kanban view.",
+      "acceptance_criteria": [
+        "A view toggle (`Kanban` / `List`) is visible on the board page.",
+        "List view renders a flat table showing at minimum title, status (column), priority, start date, due date, and creation date.",
+        "Clicking a task row in list view opens the same task drawer used by Kanban."
+      ],
+      "test_steps": [
+        "Switch between Kanban and List views, click a task row in list view, and confirm the drawer shows the same task data."
+      ],
+      "dependencies": [
+        "TASK-105"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-107",
+      "phase": "Board views and filters",
+      "category": "frontend",
+      "priority": "high",
+      "description": "Add board filters: title search, status (column) multi-select, and creation date range, applied to both Kanban and List views.",
+      "start_condition": "The board has no filtering controls.",
+      "acceptance_criteria": [
+        "A filter bar above the board view supports a title text search, a status (column) multi-select, and a creation date range picker.",
+        "Filters apply to both Kanban (hiding non-matching cards while preserving columns) and List view, and are kept in local component state only (not persisted in the URL).",
+        "An empty result set shows a clear empty state in each view."
+      ],
+      "test_steps": [
+        "Apply each filter individually and in combination, switch between Kanban and List, and confirm only matching tasks are visible."
+      ],
+      "dependencies": [
+        "TASK-106"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-108",
+      "phase": "Workspace management",
+      "category": "workspace_project",
+      "priority": "high",
+      "description": "Implement `POST /api/workspaces` so users can create additional personal workspaces.",
+      "start_condition": "Workspaces are only auto-created on first login; users cannot create more.",
+      "acceptance_criteria": [
+        "`POST /api/workspaces` creates a workspace owned by the current user (single owner membership) and returns the new workspace payload.",
+        "Validation, 401, and standard error shapes are consistent with the rest of the API."
+      ],
+      "test_steps": [
+        "Add a controller test proving a new workspace is created with the current user as owner and listed in `GET /api/workspaces`."
+      ],
+      "dependencies": [
+        "TASK-107"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-109",
+      "phase": "Workspace management",
+      "category": "workspace_project",
+      "priority": "high",
+      "description": "Implement `PATCH /api/workspaces/{id}` to rename a workspace.",
+      "start_condition": "Workspace names are fixed at creation.",
+      "acceptance_criteria": [
+        "`PATCH /api/workspaces/{id}` updates the workspace `name` for owners only.",
+        "Standard 401, 403, and 404 responses use the `ApiError` shape."
+      ],
+      "test_steps": [
+        "Add a controller test proving the rename succeeds for the owner and is rejected for non-members."
+      ],
+      "dependencies": [
+        "TASK-108"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-110",
+      "phase": "Workspace management",
+      "category": "workspace_project",
+      "priority": "high",
+      "description": "Implement `DELETE /api/workspaces/{id}` with cascade for projects and child rows, and refuse deleting the user's last workspace.",
+      "start_condition": "Workspaces cannot be deleted.",
+      "acceptance_criteria": [
+        "`DELETE /api/workspaces/{id}` removes the workspace and all projects, columns, tasks, comments, and dependencies inside it in a single transaction.",
+        "The endpoint refuses to delete the user's last remaining workspace and returns HTTP 409 with the `ApiError` shape so the user always has at least one workspace.",
+        "Standard 401, 403, and 404 responses use the `ApiError` shape."
+      ],
+      "test_steps": [
+        "Add controller tests for cascade-delete success, the last-workspace conflict case, and forbidden access for non-owners."
+      ],
+      "dependencies": [
+        "TASK-109"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-111",
+      "phase": "Workspace management",
+      "category": "frontend",
+      "priority": "high",
+      "description": "Replace the workspace dropdown with a vertical workspace list rendered in the sidebar.",
+      "start_condition": "Workspaces are selected from a dropdown switcher in `AppShell`.",
+      "acceptance_criteria": [
+        "The sidebar renders all of the user's workspaces vertically (similar to the chat list in ChatGPT) instead of a dropdown.",
+        "Clicking a workspace selects it and updates the dashboard project list; the active workspace is highlighted with the existing accent token."
+      ],
+      "test_steps": [
+        "Run the dev server, switch between workspaces from the sidebar, and confirm the dashboard reloads with the chosen workspace's projects."
+      ],
+      "dependencies": [
+        "TASK-110"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-112",
+      "phase": "Workspace management",
+      "category": "frontend",
+      "priority": "high",
+      "description": "Add UI to create, rename, and delete workspaces from the sidebar list.",
+      "start_condition": "The sidebar shows workspaces but cannot create, rename, or delete them.",
+      "acceptance_criteria": [
+        "A `+ New workspace` action creates a workspace via the API and selects it.",
+        "Each workspace row supports inline rename via a context action.",
+        "Each workspace row exposes a delete action that opens a typed-name confirmation modal (same UX as project delete); on confirm the workspace and its projects are removed and the user is moved to another available workspace.",
+        "Backend errors (e.g., the last-workspace conflict) are surfaced via toast."
+      ],
+      "test_steps": [
+        "Create a workspace, rename it, then delete it via the typed-name modal, and confirm it disappears from the sidebar after reload.",
+        "Try to delete the only remaining workspace and confirm the toast explains why it cannot be deleted."
+      ],
+      "dependencies": [
+        "TASK-111"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-113",
+      "phase": "Sidebar redesign",
+      "category": "frontend",
+      "priority": "medium",
+      "description": "Make the sidebar collapsible with icon-only mode, hover tooltips, and a bottom avatar menu.",
+      "start_condition": "The sidebar is always expanded and has no avatar-anchored menu.",
+      "acceptance_criteria": [
+        "The sidebar can be collapsed and expanded via a toggle at the top.",
+        "Collapsed state shows only icons (workspace icons + the toggle at the top, user avatar at the bottom); expanded state shows full workspace names and headers.",
+        "Hovering any sidebar icon when collapsed shows a tooltip with the full label.",
+        "Clicking the avatar (in either state) opens a contextual menu with `Profile` (links to `/profile`) and `Sign out`."
+      ],
+      "test_steps": [
+        "Collapse the sidebar, hover a workspace icon to confirm the tooltip, click the avatar to confirm the menu opens, and click `Sign out` to confirm logout."
+      ],
+      "dependencies": [
+        "TASK-112"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-114",
+      "phase": "User profile",
+      "category": "auth",
+      "priority": "high",
+      "description": "Extend the `users` table to store an optional avatar (BLOB) and content type.",
+      "start_condition": "The `users` table has no avatar storage.",
+      "acceptance_criteria": [
+        "A Flyway migration adds `avatar` (BYTEA) and `avatar_content_type` (TEXT) columns to `users`, both nullable.",
+        "The `User` entity exposes the new fields with appropriate JPA mapping (avatar bytes lazily loaded so they do not bloat the default user lookup)."
+      ],
+      "test_steps": [
+        "Run the backend with the new migration applied and confirm the new columns exist in the local database.",
+        "Run `./mvnw compile` inside `backend/` and confirm it succeeds."
+      ],
+      "dependencies": [
+        "TASK-113"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-115",
+      "phase": "User profile",
+      "category": "auth",
+      "priority": "high",
+      "description": "Implement profile update endpoint `PATCH /api/me` (display name + avatar) and an avatar-serving endpoint.",
+      "start_condition": "Display name and avatar cannot be updated through the API and there is no way to fetch the avatar bytes.",
+      "acceptance_criteria": [
+        "`PATCH /api/me` accepts a multipart payload with optional `displayName` and an optional avatar file; only the fields provided are updated.",
+        "Avatar uploads are size-validated (reasonable limit, e.g., 1 MB) and content-type-validated (JPEG, PNG, or WebP); violations return HTTP 400 with the `ApiError` shape.",
+        "`GET /api/users/{id}/avatar` returns the stored bytes with the correct content type, or HTTP 404 when no avatar is set."
+      ],
+      "test_steps": [
+        "Add controller tests for partial display-name update, avatar upload, avatar retrieval, and rejection of an oversized or wrong-content-type upload."
+      ],
+      "dependencies": [
+        "TASK-114"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-116",
+      "phase": "User profile",
+      "category": "auth",
+      "priority": "high",
+      "description": "Implement `POST /api/me/password` to let the user change their password by providing the current one.",
+      "start_condition": "There is no endpoint for changing the password from the SPA.",
+      "acceptance_criteria": [
+        "`POST /api/me/password` accepts `{ currentPassword, newPassword }`, verifies the current password, updates the hash, and returns a simple success body.",
+        "An incorrect current password returns HTTP 400 with the `ApiError` shape; a new password failing the configured policy also returns HTTP 400.",
+        "The session remains valid after a successful change."
+      ],
+      "test_steps": [
+        "Add controller tests for successful change, wrong-current-password rejection, and policy-violation rejection (too short)."
+      ],
+      "dependencies": [
+        "TASK-115"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-117",
+      "phase": "User profile",
+      "category": "frontend",
+      "priority": "high",
+      "description": "Build a `/profile` page with editable display name, avatar upload, and password change.",
+      "start_condition": "The frontend has no profile page.",
+      "acceptance_criteria": [
+        "A `/profile` route is added and reachable from the sidebar avatar menu.",
+        "The page lets the user edit display name, upload a new avatar (with preview), and change password (current + new) using the new endpoints.",
+        "Successful avatar upload updates the avatar shown in the sidebar without a manual reload."
+      ],
+      "test_steps": [
+        "Edit the display name, upload a new avatar, and change the password from the page; confirm each change persists after reload and the sidebar avatar updates without reload."
+      ],
+      "dependencies": [
+        "TASK-116"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-118",
+      "phase": "User profile",
+      "category": "frontend",
+      "priority": "medium",
+      "description": "Render an avatar fallback showing the first letter of the display name when no avatar is set.",
+      "start_condition": "Users without an avatar have no consistent visual placeholder across the app.",
+      "acceptance_criteria": [
+        "Anywhere the user's avatar is rendered (sidebar, profile page, drawer comment authors), a circular placeholder shows the uppercase first letter of `displayName` on a colored disc when no avatar bytes are available.",
+        "The disc color comes from the existing pastel palette and is deterministic per user id so the same user always gets the same color."
+      ],
+      "test_steps": [
+        "Sign in with a user that has no avatar and confirm the first-letter avatar is shown everywhere the avatar normally appears.",
+        "Set an avatar and confirm the fallback is replaced by the uploaded image."
+      ],
+      "dependencies": [
+        "TASK-117"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-119",
+      "phase": "Polish animations",
+      "category": "polish",
+      "priority": "medium",
+      "description": "Animate the in-project tab bar's accent indicator so it slides smoothly between Board, Timeline, and Settings tabs.",
+      "start_condition": "Switching tabs inside a project simply re-paints the active button with no transition for the accent indicator.",
+      "acceptance_criteria": [
+        "The accent indicator (underline or pill behind the active tab label) animates its position and width when the active tab changes; the page-content swap itself is unchanged.",
+        "The animation respects `prefers-reduced-motion` and falls back to an instant change when the user has reduced motion enabled."
+      ],
+      "test_steps": [
+        "Switch between Board, Timeline, and Settings tabs and confirm the accent indicator slides between labels.",
+        "Enable `prefers-reduced-motion` in the OS or devtools and confirm the indicator change is instant."
+      ],
+      "dependencies": [
+        "TASK-118"
+      ],
+      "status": "pending"
     }
   ]
 }

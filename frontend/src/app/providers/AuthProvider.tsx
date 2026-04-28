@@ -59,8 +59,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await authApi.logout();
     } finally {
-      queryClient.clear();
+      // Set auth.me to null first so the active observer's bound query
+      // updates in place — destroying the query before clearing it would
+      // unbind the observer and leave the SPA stuck on the previous user
+      // until a manual reload.
       queryClient.setQueryData<AuthUser | null>(queryKeys.auth.me, null);
+      queryClient.removeQueries({
+        predicate: (query) => {
+          const key = query.queryKey;
+          return !(Array.isArray(key) && key[0] === 'auth' && key[1] === 'me');
+        },
+      });
     }
   }, [queryClient]);
 

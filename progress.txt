@@ -3260,3 +3260,51 @@ TASK-087 is the last remaining `pending` task in `tasks.json`. With it merged, t
 - **Cross-link placement is symmetric, not pathological-case-aware.** A user who lands on `/sign-up` from a third-party invite link (a feature explicitly out of scope per `mvp_scope.out_of_scope` "Email invites") would still see the "Already have an account? Sign in" link — that is the intended behavior, since invite-flows are not part of the MVP and the symmetric link is correct for the only entry path the MVP supports.
 - **No keyboard-focus-style override.** The `<Link>` inherits the user agent's default `:focus` ring on Tab navigation. Existing form inputs and buttons in both pages also rely on the user agent default; introducing a custom focus ring just for the cross-link would create inconsistency. A future polish task could add a unified `:focus-visible` style across all interactive elements in `globals.css`.
 - **All TASK-XXX in tasks.json now have status `done`.** No remaining pending tasks; the next iteration should consult the user for the next unit of work or re-baseline against `architecture.md` if new scope is being added.
+
+
+## 2026-04-28 — TASK-088: Fix `Sign out` so it ends the SPA session without requiring a manual reload
+
+### Files changed
+
+- `frontend/src/app/providers/AuthProvider.tsx` — reordered the cache mutations inside `signOut` so the active `meQuery` observer is updated *in place* before the rest of the cache is dropped.
+
+### Root cause
+
+`AuthProvider` holds a `useQuery` whose `QueryObserver` is bound to the underlying `Query` instance in the `QueryCache` for `['auth', 'me']`. The previous implementation called:
+
+1. `queryClient.clear()` — calls `queryCache.remove(query)` for every query, which invokes `query.destroy()`. That severs the link between the observer and the cache entry but does **not** push a result update to the observer.
+2. `queryClient.setQueryData(queryKeys.auth.me, null)` — calls `queryCache.build(client, options)`, which constructs a *brand-new* `Query` for `['auth','me']` with `data = null`.
+
+The `meQuery` observer is still holding a reference to the destroyed query, so it never receives the new `null` value, never re-renders, and `value.user` keeps the previously-cached `AuthUser`. `RequireAuth` therefore continues to see `status === 'authenticated'` and never navigates to `/sign-in`. A manual reload remounts `AuthProvider`, which freshly calls `useQuery`, hits the empty cache, refetches `/api/me`, gets `401` (the server session is dead) → `null`, and the SPA finally agrees with reality.
+
+The observer would only auto-rebind on the *next* React render that runs `useQuery` for `auth.me`, but nothing in the signed-out flow triggers that render — the previous render's stale result was the most recent one the observer ever produced.
+
+### Fix
+
+Set the `auth.me` cache entry to `null` *first* — while the observer is still bound to the live `Query` — and then drop everything else. The observer's update path is:
+
+1. `setQueryData(['auth','me'], null)` calls `query.setData(null)` on the still-bound `Query`.
+2. The `Query` notifies its subscribed observer.
+3. The observer recomputes, the `useMemo` in `AuthProvider` now produces `status = 'unauthenticated'`, and `RequireAuth` redirects to `/sign-in`.
+4. Other cached queries (workspaces, projects, board, timeline, comments, …) are dropped via `removeQueries` with a predicate so the next signed-in user does not see stale data.
+
+The predicate keeps `['auth','me']` alive because we just deliberately wrote `null` to it, and removing it again would re-introduce the same observer-unbinding bug we just fixed.
+
+### Why no `useNavigate` in `signOut`
+
+Adding an explicit `navigate('/sign-in')` inside `signOut` was tempting, but the architecture already routes through `RequireAuth`, which navigates declaratively whenever `status` flips to `'unauthenticated'`. The bug was that `status` never flipped, not that the redirect was missing. Fixing the observer-update path is the minimal change; pushing an imperative navigation would mask the real issue and create two routes-to-`/sign-in` paths that have to stay in sync.
+
+### What was tested
+
+- **Static review only.** The bash sandbox in this session blocked frontend build/lint commands (same constraint observed in the TASK-086 / TASK-087 progress notes); per the user instruction this task is frontend-only so the mandated `./mvnw` checks do not apply. Static verification:
+  - The predicate filter mirrors the shape of `queryKeys.auth.me` declared in `frontend/src/shared/api/queryKeys.ts` as `['auth', 'me'] as const`.
+  - All other call sites continue to compile: nothing else in `AuthProvider` references `queryClient.clear`, and `removeQueries` is part of the same `useQueryClient` API already used elsewhere.
+  - `meQuery` already has `staleTime: Infinity`, so writing `null` via `setQueryData` makes the query "fresh forever" and prevents an immediate refetch. That is the intended behavior — we *want* the SPA to treat the session as gone without making another `/api/me` round-trip.
+- **Manual smoke** (TASK-088 test_steps) is for a future runner with a live backend + frontend dev server: sign in, click `Sign out`, and confirm the redirect to `/sign-in` happens without a manual reload.
+
+### Follow-up risks / notes
+
+- **The predicate walks every cached query.** For an MVP-sized cache this is fine; if the cache ever grows large enough that `removeQueries` becomes a hotspot, the cleaner pattern would be `queryClient.removeQueries` calls scoped to one top-level key per call. Today the cache holds at most a handful of keys per session, so the predicate is the simpler choice.
+- **In-flight mutations are not aborted.** The previous `clear()` also cleared the mutation cache; the new code leaves it alone. If a long-running mutation (e.g., a comment POST) is in flight when the user clicks `Sign out`, it will resolve against the now-dead session and surface a 401. The toast handler in `AppShell` already shows backend error messages, and the user is on `/sign-in` by that point, so the failure is a surface-level annoyance rather than data corruption. Worth revisiting if real-time collaboration ever lands.
+- **No automated component test.** Per `architecture.md` §13.2 the frontend uses manual browser verification by default; an RTL test that mounts `AuthProvider` + `AppShell` inside a `MemoryRouter`, mocks `authApi.logout`, fires the click, and asserts the location changed to `/sign-in` would be straightforward to add but is scope creep relative to a single bug fix.
+- **TASK-089 is now unblocked.** The next critical bug in the chain is the server error returned when adding a `depend on` relation; that fix lives in the backend dependency-create endpoint.
