@@ -38,4 +38,6 @@ public interface TaskRepository extends JpaRepository<Task, UUID> {
     List<Task> findByProjectId(UUID projectId);
 
     void deleteByProjectId(UUID projectId);
+
+    boolean existsByColumnId(UUID columnId);
 }

@@ -56,6 +56,14 @@ public class TaskQueryService {
         return toResponse(task);
     }
 
+    /**
+     * Returns {@code true} when at least one task references the given column.
+     * Used by {@code BoardColumnService} to guard against deleting non-empty columns.
+     */
+    public boolean hasTasksInColumn(UUID columnId) {
+        return taskRepository.existsByColumnId(columnId);
+    }
+
     // -------------------------------------------------------------------------
     // Private helpers
     // -------------------------------------------------------------------------

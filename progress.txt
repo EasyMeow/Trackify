@@ -3738,3 +3738,22 @@ What was tested:
 
 Follow-up risk:
 - None specific. TASK-100 (DELETE column, reject non-empty) is next.
+
+## 2026-04-28 — TASK-100: DELETE /api/projects/{projectId}/columns/{columnId}
+
+What changed:
+- `task/infrastructure/TaskRepository`: added `existsByColumnId(UUID columnId)` derived query method.
+- `task/application/TaskQueryService`: added `hasTasksInColumn(UUID columnId)` — delegates to `existsByColumnId`, used by the board module to check column occupancy without cross-module JPA coupling.
+- `board/application/BoardColumnService`: added `TaskQueryService` constructor dependency; added `deleteColumn(UUID projectId, UUID columnId, UUID userId)` — enforces project membership, locates column within project (prevents cross-project leakage), throws `ConflictException` (409) when column has tasks, otherwise deletes.
+- `board/controller/ColumnController`: added `DELETE /{columnId}` handler returning 204 No Content on success.
+- `board/application/BoardColumnServiceTest`: updated constructor call to pass new `TaskQueryService` mock.
+- `board/controller/ColumnControllerTest`: added 5 delete tests — happy path (204), non-empty conflict (409 + ApiError), missing/cross-project column (404), non-member (403), unauthenticated (401).
+
+What was tested:
+- `./mvnw compile test-compile` — clean.
+- `./mvnw test` — 150 tests, 0 failures, BUILD SUCCESS.
+- `ColumnControllerTest` — 15/15 pass (10 existing + 5 new).
+
+Follow-up risk:
+- Column positions are not compacted after deletion (gaps may appear). TASK-101 (reorder endpoint) normalises positions anyway, so this is acceptable.
+- TASK-101 (PATCH /api/projects/{projectId}/columns/order) is next.

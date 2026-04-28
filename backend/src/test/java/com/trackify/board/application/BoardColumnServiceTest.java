@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 import com.trackify.board.domain.BoardColumn;
 import com.trackify.board.infrastructure.BoardColumnRepository;
 import com.trackify.project.application.ProjectQueryService;
+import com.trackify.task.application.TaskQueryService;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -48,11 +49,14 @@ class BoardColumnServiceTest {
     @Mock
     private ProjectQueryService projectQueryService;
 
+    @Mock
+    private TaskQueryService taskQueryService;
+
     private BoardColumnService service;
 
     @BeforeEach
     void setUp() {
-        service = new BoardColumnService(boardColumnRepository, projectQueryService);
+        service = new BoardColumnService(boardColumnRepository, projectQueryService, taskQueryService);
     }
 
     @Test

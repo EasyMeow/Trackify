@@ -3,8 +3,10 @@ package com.trackify.board.application;
 import com.trackify.board.domain.BoardColumn;
 import com.trackify.board.dto.ColumnResponse;
 import com.trackify.board.infrastructure.BoardColumnRepository;
+import com.trackify.common.exception.ConflictException;
 import com.trackify.common.exception.NotFoundException;
 import com.trackify.project.application.ProjectQueryService;
+import com.trackify.task.application.TaskQueryService;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -31,11 +33,14 @@ public class BoardColumnService {
 
     private final BoardColumnRepository boardColumnRepository;
     private final ProjectQueryService projectQueryService;
+    private final TaskQueryService taskQueryService;
 
     public BoardColumnService(BoardColumnRepository boardColumnRepository,
-                              ProjectQueryService projectQueryService) {
+                              ProjectQueryService projectQueryService,
+                              TaskQueryService taskQueryService) {
         this.boardColumnRepository = boardColumnRepository;
         this.projectQueryService = projectQueryService;
+        this.taskQueryService = taskQueryService;
     }
 
     /**
@@ -93,6 +98,30 @@ public class BoardColumnService {
         column.setName(name);
         boardColumnRepository.save(column);
         return toResponse(column);
+    }
+
+    /**
+     * Deletes a column that belongs to {@code projectId}, provided it contains no tasks.
+     *
+     * <p>Authorization is enforced first (project membership), then existence of the
+     * column within that project. A non-empty column yields HTTP 409.
+     *
+     * @param projectId target project UUID
+     * @param columnId  column to delete
+     * @param userId    authenticated caller's UUID
+     * @throws NotFoundException  when the column does not exist under this project
+     * @throws ConflictException  when the column still contains tasks
+     */
+    @Transactional
+    public void deleteColumn(UUID projectId, UUID columnId, UUID userId) {
+        projectQueryService.getById(projectId, userId);
+        BoardColumn column = boardColumnRepository.findById(columnId)
+                .filter(c -> c.getProjectId().equals(projectId))
+                .orElseThrow(() -> new NotFoundException("Column not found"));
+        if (taskQueryService.hasTasksInColumn(column.getId())) {
+            throw new ConflictException("Column must be emptied before it can be deleted");
+        }
+        boardColumnRepository.delete(column);
     }
 
     private static ColumnResponse toResponse(BoardColumn column) {

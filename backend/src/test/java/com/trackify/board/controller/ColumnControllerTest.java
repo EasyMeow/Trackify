@@ -2,9 +2,12 @@ package com.trackify.board.controller;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -15,6 +18,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trackify.auth.application.LocalUserPrincipal;
 import com.trackify.board.application.BoardColumnService;
 import com.trackify.board.dto.ColumnResponse;
+import com.trackify.common.exception.ConflictException;
 import com.trackify.common.exception.ForbiddenException;
 import com.trackify.common.exception.NotFoundException;
 import com.trackify.config.JacksonConfig;
@@ -265,6 +269,77 @@ class ColumnControllerTest {
         mockMvc.perform(patch("/api/projects/{projectId}/columns/{columnId}", projectId, columnId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
+                .andExpect(status().isUnauthorized());
+        verifyNoInteractions(boardColumnService);
+    }
+
+    // --- TASK-100: DELETE /{columnId} tests ---
+
+    @Test
+    void memberDeletesEmptyColumnReturns204() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+        UUID columnId = UUID.randomUUID();
+
+        doNothing().when(boardColumnService).deleteColumn(projectId, columnId, userId);
+
+        mockMvc.perform(delete("/api/projects/{projectId}/columns/{columnId}", projectId, columnId)
+                        .with(authentication(authFor(userId))))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void deleteNonEmptyColumnReturns409WithApiError() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+        UUID columnId = UUID.randomUUID();
+
+        doThrow(new ConflictException("Column must be emptied before it can be deleted"))
+                .when(boardColumnService).deleteColumn(projectId, columnId, userId);
+
+        mockMvc.perform(delete("/api/projects/{projectId}/columns/{columnId}", projectId, columnId)
+                        .with(authentication(authFor(userId))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.status").value(409))
+                .andExpect(jsonPath("$.error").value("CONFLICT"));
+    }
+
+    @Test
+    void deleteMissingOrCrossProjectColumnReturns404() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+        UUID columnId = UUID.randomUUID();
+
+        doThrow(new NotFoundException("Column not found"))
+                .when(boardColumnService).deleteColumn(projectId, columnId, userId);
+
+        mockMvc.perform(delete("/api/projects/{projectId}/columns/{columnId}", projectId, columnId)
+                        .with(authentication(authFor(userId))))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.status").value(404));
+    }
+
+    @Test
+    void deleteColumnNonMemberReceivesForbidden() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+        UUID columnId = UUID.randomUUID();
+
+        doThrow(new ForbiddenException("Project not accessible"))
+                .when(boardColumnService).deleteColumn(projectId, columnId, userId);
+
+        mockMvc.perform(delete("/api/projects/{projectId}/columns/{columnId}", projectId, columnId)
+                        .with(authentication(authFor(userId))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403));
+    }
+
+    @Test
+    void deleteColumnUnauthenticatedIsRejectedWith401() throws Exception {
+        UUID projectId = UUID.randomUUID();
+        UUID columnId = UUID.randomUUID();
+
+        mockMvc.perform(delete("/api/projects/{projectId}/columns/{columnId}", projectId, columnId))
                 .andExpect(status().isUnauthorized());
         verifyNoInteractions(boardColumnService);
     }
