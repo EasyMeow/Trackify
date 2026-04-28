@@ -3664,3 +3664,20 @@ What was tested:
 Follow-up risk:
 - `deleteByProjectId` on TaskRepository uses Spring Data's derived-query delete (SELECT then per-entity delete). For large projects this is acceptable but not optimal. A `@Modifying @Query` bulk delete could be added if performance becomes a concern.
 - TASK-096 (Make ProjectSettingsPage editable) is next.
+
+## 2026-04-28 — TASK-096: Make ProjectSettingsPage editable
+
+What changed:
+- Added `ProjectUpdateRequest` interface and `update()` method (PATCH `/projects/{projectId}`) to `projectApi.ts`.
+- Created `useUpdateProject(projectId)` mutation hook — on success sets `['projects', projectId]` cache directly and invalidates the workspace projects list so the dashboard and sidebar reflect the new name immediately.
+- Rewrote `ProjectSettingsPage.tsx`: name and description are now `<input>`/`<textarea>` seeded from the fetched project; a `Save changes` button appears only when the form is dirty and is disabled while the mutation is pending.
+- Toast on error via `addErrorToast` (same pattern as other mutation hooks).
+
+What was tested:
+- `npm run build` succeeds (TypeScript + Vite, 441 modules, no errors).
+- `httpClient.patch` already existed — no change needed there.
+- Manual UI verification: edit project name in settings, save, reload, confirm new name on settings page and dashboard (user-run step per task spec).
+
+Follow-up risk:
+- Slug is intentionally not editable (stable identifier). If a future task exposes slug editing, routing that uses slug-based URLs will need a redirect strategy.
+- TASK-097 (project deletion from settings page) is next.

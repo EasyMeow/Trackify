@@ -7,6 +7,11 @@ export interface ProjectCreateRequest {
   description?: string;
 }
 
+export interface ProjectUpdateRequest {
+  name?: string;
+  description?: string | null;
+}
+
 export const projectApi = {
   listForWorkspace(workspaceId: string): Promise<Project[]> {
     return httpClient.get<Project[]>(`/workspaces/${workspaceId}/projects`);
@@ -21,5 +26,9 @@ export const projectApi = {
     if (request.slug && request.slug.trim()) body.slug = request.slug.trim();
     if (request.description && request.description.trim()) body.description = request.description.trim();
     return httpClient.post<Project>(`/workspaces/${workspaceId}/projects`, body);
+  },
+
+  update(projectId: string, request: ProjectUpdateRequest): Promise<Project> {
+    return httpClient.patch<Project>(`/projects/${projectId}`, request);
   },
 };
