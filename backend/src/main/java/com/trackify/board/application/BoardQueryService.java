@@ -95,7 +95,8 @@ public class BoardQueryService {
                 task.getPriority(),
                 task.getSortOrder(),
                 task.getStartDate(),
-                task.getDueDate()
+                task.getDueDate(),
+                task.getCreatedAt()
         );
     }
 }

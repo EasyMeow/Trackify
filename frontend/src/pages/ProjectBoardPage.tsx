@@ -18,6 +18,7 @@ import { useDeleteColumn } from '../modules/kanban/hooks/useDeleteColumn';
 import { useReorderColumns } from '../modules/kanban/hooks/useReorderColumns';
 import { ProjectNav } from '../modules/project/components/ProjectNav';
 import { BoardColumnView } from '../modules/kanban/components/BoardColumnView';
+import { BoardListView } from '../modules/kanban/components/BoardListView';
 import { TaskCard } from '../modules/kanban/components/TaskCard';
 import { useSelectedTaskId } from '../modules/task/hooks/useSelectedTaskId';
 import { TaskDrawer } from '../modules/task/components/TaskDrawer';
@@ -100,6 +101,8 @@ function applyColumnOrder(columns: BoardColumn[], order: string[]): BoardColumn[
   return ordered;
 }
 
+type ViewMode = 'kanban' | 'list';
+
 export default function ProjectBoardPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const { data, isLoading, isError } = useBoardQuery(projectId);
@@ -109,6 +112,7 @@ export default function ProjectBoardPage() {
   const deleteColumn = useDeleteColumn(projectId);
   const reorderColumns = useReorderColumns(projectId);
 
+  const [viewMode, setViewMode] = useState<ViewMode>('kanban');
   const [isCreating, setIsCreating] = useState(false);
   const [dragOverrides, setDragOverrides] = useState<DragOverrides>(new Map());
   const [activeTask, setActiveTask] = useState<BoardTaskCard | null>(null);
@@ -217,24 +221,26 @@ export default function ProjectBoardPage() {
   return (
     <section style={pageStyle}>
       <ProjectNav projectId={projectId} />
-      <h1 style={headingStyle}>Board</h1>
-      <button
-        type="button"
-        style={{
-          alignSelf: 'flex-start',
-          padding: 'var(--space-2) var(--space-4)',
-          fontSize: 'var(--font-size-sm)',
-          fontWeight: 'var(--font-weight-semibold)',
-          color: 'var(--color-text-on-accent)',
-          backgroundColor: 'var(--color-accent)',
-          border: 'none',
-          borderRadius: 'var(--radius-md)',
-          cursor: 'pointer',
-        }}
-        onClick={() => setIsCreating(true)}
-      >
-        + Create task
-      </button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+        <h1 style={{ ...headingStyle, flex: 1 }}>Board</h1>
+        <ViewToggle value={viewMode} onChange={setViewMode} />
+        <button
+          type="button"
+          style={{
+            padding: 'var(--space-2) var(--space-4)',
+            fontSize: 'var(--font-size-sm)',
+            fontWeight: 'var(--font-weight-semibold)',
+            color: 'var(--color-text-on-accent)',
+            backgroundColor: 'var(--color-accent)',
+            border: 'none',
+            borderRadius: 'var(--radius-md)',
+            cursor: 'pointer',
+          }}
+          onClick={() => setIsCreating(true)}
+        >
+          + Create task
+        </button>
+      </div>
 
       {isLoading && <p style={mutedStyle}>Loading board…</p>}
       {isError && <p style={{ ...mutedStyle, color: 'var(--color-danger)' }}>Couldn't load board.</p>}
@@ -242,58 +248,68 @@ export default function ProjectBoardPage() {
         <p style={mutedStyle}>This board has no columns yet.</p>
       )}
 
-      <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-        <div style={boardStyle}>
-          <SortableContext
-            items={displayColumns.map((c) => c.id)}
-            strategy={horizontalListSortingStrategy}
-          >
-            {displayColumns.map((column) => (
-              <BoardColumnView
-                key={column.id}
-                column={column}
-                selectedTaskId={selectedTaskId}
-                onSelectTask={setSelectedTaskId}
-                onRename={(colId, name) => renameColumn.mutate({ columnId: colId, name })}
-                onDelete={(colId) => deleteColumn.mutate(colId)}
-              />
-            ))}
-          </SortableContext>
-          <AddColumnForm projectId={projectId} />
-        </div>
-        <DragOverlay>
-          {activeTask ? (
-            <div style={{ opacity: 0.9, pointerEvents: 'none', width: '260px' }}>
-              <TaskCard task={activeTask} />
-            </div>
-          ) : activeColumn ? (
-            <div
-              style={{
-                opacity: 0.9,
-                pointerEvents: 'none',
-                minWidth: '260px',
-                maxWidth: '300px',
-                backgroundColor: 'var(--color-bg-muted)',
-                border: '1px solid var(--color-border)',
-                borderRadius: 'var(--radius-lg)',
-                padding: 'var(--space-3)',
-              }}
+      {!isLoading && !isError && data && viewMode === 'list' && (
+        <BoardListView
+          columns={displayColumns}
+          selectedTaskId={selectedTaskId}
+          onSelectTask={setSelectedTaskId}
+        />
+      )}
+
+      {viewMode === 'kanban' && (
+        <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+          <div style={boardStyle}>
+            <SortableContext
+              items={displayColumns.map((c) => c.id)}
+              strategy={horizontalListSortingStrategy}
             >
-              <span
+              {displayColumns.map((column) => (
+                <BoardColumnView
+                  key={column.id}
+                  column={column}
+                  selectedTaskId={selectedTaskId}
+                  onSelectTask={setSelectedTaskId}
+                  onRename={(colId, name) => renameColumn.mutate({ columnId: colId, name })}
+                  onDelete={(colId) => deleteColumn.mutate(colId)}
+                />
+              ))}
+            </SortableContext>
+            <AddColumnForm projectId={projectId} />
+          </div>
+          <DragOverlay>
+            {activeTask ? (
+              <div style={{ opacity: 0.9, pointerEvents: 'none', width: '260px' }}>
+                <TaskCard task={activeTask} />
+              </div>
+            ) : activeColumn ? (
+              <div
                 style={{
-                  fontSize: 'var(--font-size-sm)',
-                  fontWeight: 'var(--font-weight-semibold)',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.04em',
-                  color: 'var(--color-text)',
+                  opacity: 0.9,
+                  pointerEvents: 'none',
+                  minWidth: '260px',
+                  maxWidth: '300px',
+                  backgroundColor: 'var(--color-bg-muted)',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: 'var(--radius-lg)',
+                  padding: 'var(--space-3)',
                 }}
               >
-                {activeColumn.name}
-              </span>
-            </div>
-          ) : null}
-        </DragOverlay>
-      </DndContext>
+                <span
+                  style={{
+                    fontSize: 'var(--font-size-sm)',
+                    fontWeight: 'var(--font-weight-semibold)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                    color: 'var(--color-text)',
+                  }}
+                >
+                  {activeColumn.name}
+                </span>
+              </div>
+            ) : null}
+          </DragOverlay>
+        </DndContext>
+      )}
 
       <TaskDrawer
         taskId={selectedTaskId}
@@ -305,6 +321,38 @@ export default function ProjectBoardPage() {
         }}
       />
     </section>
+  );
+}
+
+function ViewToggle({ value, onChange }: { value: ViewMode; onChange: (v: ViewMode) => void }) {
+  const containerStyle: React.CSSProperties = {
+    display: 'flex',
+    border: '1px solid var(--color-border)',
+    borderRadius: 'var(--radius-md)',
+    overflow: 'hidden',
+  };
+
+  function btnStyle(active: boolean): React.CSSProperties {
+    return {
+      padding: 'var(--space-1) var(--space-3)',
+      fontSize: 'var(--font-size-sm)',
+      fontWeight: active ? 'var(--font-weight-semibold)' : 'var(--font-weight-normal)',
+      color: active ? 'var(--color-text-on-accent)' : 'var(--color-text-subtle)',
+      backgroundColor: active ? 'var(--color-accent)' : 'transparent',
+      border: 'none',
+      cursor: 'pointer',
+    };
+  }
+
+  return (
+    <div style={containerStyle}>
+      <button type="button" style={btnStyle(value === 'kanban')} onClick={() => onChange('kanban')}>
+        Kanban
+      </button>
+      <button type="button" style={btnStyle(value === 'list')} onClick={() => onChange('list')}>
+        List
+      </button>
+    </div>
   );
 }
 

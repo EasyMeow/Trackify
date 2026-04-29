@@ -91,12 +91,13 @@ class BoardControllerTest {
         LocalDate start = LocalDate.of(2026, 4, 1);
         LocalDate due = LocalDate.of(2026, 4, 30);
 
+        java.time.Instant now = java.time.Instant.now();
         BoardTaskCardResponse cardA = new BoardTaskCardResponse(
-                taskA, "Task A", "TODO", "HIGH", 1.0, start, due);
+                taskA, "Task A", "TODO", "HIGH", 1.0, start, due, now);
         BoardTaskCardResponse cardB = new BoardTaskCardResponse(
-                taskB, "Task B", "TODO", "MEDIUM", 2.0, null, null);
+                taskB, "Task B", "TODO", "MEDIUM", 2.0, null, null, now);
         BoardTaskCardResponse cardC = new BoardTaskCardResponse(
-                taskC, "Task C", "IN_PROGRESS", "LOW", 1.0, null, due);
+                taskC, "Task C", "IN_PROGRESS", "LOW", 1.0, null, due, now);
 
         BoardColumnResponse todo = new BoardColumnResponse(colTodo, "Todo", 0, List.of(cardA, cardB));
         BoardColumnResponse inProgress = new BoardColumnResponse(colInProgress, "In Progress", 1, List.of(cardC));

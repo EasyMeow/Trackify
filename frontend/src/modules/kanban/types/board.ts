@@ -9,6 +9,7 @@ export interface BoardTaskCard {
   sortOrder: number;
   startDate: string | null;
   dueDate: string | null;
+  createdAt: string;
 }
 
 export interface BoardColumn {

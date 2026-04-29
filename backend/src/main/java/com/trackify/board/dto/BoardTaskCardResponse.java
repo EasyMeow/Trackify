@@ -1,5 +1,6 @@
 package com.trackify.board.dto;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.UUID;
 
@@ -15,6 +16,7 @@ public record BoardTaskCardResponse(
         String priority,
         double sortOrder,
         LocalDate startDate,
-        LocalDate dueDate
+        LocalDate dueDate,
+        Instant createdAt
 ) {
 }

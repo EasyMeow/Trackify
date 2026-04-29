@@ -3898,3 +3898,59 @@ What was tested:
 
 Follow-up:
 - TASK-105 (move task creation into drawer, remove inline board input) is next.
+
+## 2026-04-28 — TASK-105: Move task creation into the task drawer
+
+What changed:
+- Removed `CreateTaskRow` component from `ProjectBoardPage.tsx` along with its
+  associated inline styles (`createRowStyle`, `inputStyle`, `submitButtonStyle`,
+  `submitButtonDisabledStyle`, `errorTextStyle`) and unused imports
+  (`useCreateTask`, `ApiError`).
+- Replaced the inline row with a single "+ Create task" button (primary accent
+  style, `alignSelf: flex-start`) above the board.
+- Extended `TaskDrawer` with `createMode?: boolean` prop:
+  - Added `CreateDrawerContent` component: empty title input (autoFocus),
+    description textarea, priority select (default MEDIUM), start/due date
+    pickers, and an explicit "Save" / "Cancel" footer row.
+  - Save calls `useCreateTask`, closes drawer on success, shows error toast on
+    failure (delegated to the hook).
+  - Pressing Enter in the title field triggers save.
+  - Existing ESC handler wired to `isOpen = !!taskId || !!createMode`.
+- `ProjectBoardPage` passes `createMode={isCreating && !selectedTaskId}` and a
+  unified `onClose` that clears both `selectedTaskId` and `isCreating`.
+
+What was tested:
+- `npm run build` → 448 modules, 0 errors.
+
+Follow-up:
+- TASK-106 (Kanban/List view toggle on the board page) is unblocked and next.
+
+## 2026-04-29 — TASK-106: Kanban/List view toggle on the project board page
+
+What changed:
+- Backend: added `createdAt` (Instant) field to `BoardTaskCardResponse` record
+  and wired it in `BoardQueryService.toCard()` via `task.getCreatedAt()`.
+  Updated `BoardControllerTest` (3 constructor calls) to pass the new field.
+- Frontend types: added `createdAt: string` to `BoardTaskCard` interface.
+- New `BoardListView.tsx` component in `modules/kanban/components/`:
+  - Flattens all columns' tasks into a single array with `columnName` attached.
+  - Renders a `<table>` with columns: Title, Status (column name), Priority,
+    Start date, Due date, Created.
+  - Row click opens the same `TaskDrawer` used by Kanban (calls `onSelectTask`).
+  - Active row highlighted with accent-subtle background.
+  - Empty state shown when no tasks exist.
+- `ProjectBoardPage.tsx`:
+  - Added `viewMode: 'kanban' | 'list'` state (default `'kanban'`).
+  - New `ViewToggle` component: two side-by-side segmented buttons styled with
+    existing token variables; active segment has accent background.
+  - Header row now contains h1 + ViewToggle + "Create task" button in a flex row.
+  - `BoardListView` rendered when `viewMode === 'list'` (outside DndContext).
+  - `DndContext` + `DragOverlay` wrapped in `{viewMode === 'kanban' && ...}` so
+    dnd-kit is not mounted during list view.
+
+What was tested:
+- Backend: `./mvnw compile test-compile` → success; `./mvnw test` → BUILD SUCCESS.
+- Frontend: `npm run build` → 449 modules, 0 TypeScript errors.
+
+Follow-up:
+- TASK-107 (board filters: title search, status multi-select, date range) is next.
