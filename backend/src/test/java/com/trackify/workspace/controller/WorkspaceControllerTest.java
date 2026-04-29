@@ -10,6 +10,7 @@ import com.trackify.auth.application.LocalUserPrincipal;
 import com.trackify.config.JacksonConfig;
 import com.trackify.config.SecurityConfig;
 import com.trackify.config.WebConfig;
+import com.trackify.workspace.application.WorkspaceCreateService;
 import com.trackify.workspace.application.WorkspaceQueryService;
 import com.trackify.workspace.dto.WorkspaceResponse;
 
@@ -52,6 +53,9 @@ class WorkspaceControllerTest {
 
     @MockitoBean
     private WorkspaceQueryService workspaceQueryService;
+
+    @MockitoBean
+    private WorkspaceCreateService workspaceCreateService;
 
     // ---------------------------------------------------------------------------
     // Happy path: authenticated user gets exactly their own workspaces

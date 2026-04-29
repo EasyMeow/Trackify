@@ -3976,3 +3976,21 @@ What was tested:
 Follow-up risk / notes:
 - Kanban DnD while filters are active: if a card is filtered-out it can't be dragged (since it's not rendered), but the user can clear filters first. DnD on visible cards still works correctly since DnD logic uses unfiltered `displayColumns`.
 - Next pending task: TASK-108 (POST /api/workspaces — backend).
+
+## 2026-04-29 — TASK-108: POST /api/workspaces (create workspace)
+
+What changed:
+- New `CreateWorkspaceRequest.java` DTO: `@NotBlank @Size(max=255) String name`.
+- New `WorkspaceCreateService.java` `@Service`: `@Transactional create(userId, request)` saves `Workspace` + `WorkspaceMember(OWNER)` in one transaction. Slug uniqueness reuses `WorkspaceBootstrapService.toKebabCase`; collision → appends 4-char UUID fragment (same pattern as bootstrap service).
+- `WorkspaceController.java`: added `WorkspaceCreateService` constructor arg + `@PostMapping` returning HTTP 201 with Location header and workspace payload. `@Valid` on request body.
+- `WorkspaceCreateControllerTest.java` (new): 4 WebMvcTest cases — valid POST → 201 + payload + Location; created workspace appears in GET list; blank name → 400 VALIDATION_FAILED; unauthenticated → 401.
+- `WorkspaceControllerTest.java` (existing): added `@MockitoBean WorkspaceCreateService` so context starts with the new constructor dependency.
+
+What was tested:
+- `./mvnw -q compile test-compile` → success.
+- `./mvnw -q test` → 163 tests, 0 failures, BUILD SUCCESS.
+
+Follow-up risk / notes:
+- No cap on workspace count per user — if that becomes a requirement, add a service-level check.
+- Slug collision loop does a single retry; extremely unlikely to collide twice in practice.
+- Next pending task: TASK-109 (PATCH /api/workspaces/{id} — rename workspace).
