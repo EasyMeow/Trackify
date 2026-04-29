@@ -1,19 +1,13 @@
-import type { ChangeEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useWorkspaces } from '../hooks/useWorkspaces';
-
-const labelStyle = {
-  display: 'flex',
-  flexDirection: 'column' as const,
-  gap: 'var(--space-1)',
-};
 
 const captionStyle = {
   fontSize: 'var(--font-size-xs)',
   color: 'var(--color-text-subtle)',
-  fontWeight: 'var(--font-weight-medium)',
+  fontWeight: 'var(--font-weight-medium)' as const,
   letterSpacing: '0.4px',
   textTransform: 'uppercase' as const,
+  marginBottom: 'var(--space-1)',
 };
 
 const placeholderStyle = {
@@ -22,17 +16,35 @@ const placeholderStyle = {
   margin: 0,
 };
 
-const selectStyle = {
-  width: '100%',
-  padding: 'var(--space-2) var(--space-3)',
-  fontSize: 'var(--font-size-sm)',
-  color: 'var(--color-text)',
-  backgroundColor: 'var(--color-surface)',
-  border: '1px solid var(--color-border)',
-  borderRadius: 'var(--radius-md)',
-  outline: 'none',
-  cursor: 'pointer',
+const listStyle = {
+  listStyle: 'none' as const,
+  margin: 0,
+  padding: 0,
+  display: 'flex',
+  flexDirection: 'column' as const,
+  gap: '2px',
 };
+
+function workspaceItemStyle(active: boolean) {
+  return {
+    width: '100%',
+    textAlign: 'left' as const,
+    padding: 'var(--space-2) var(--space-3)',
+    fontSize: 'var(--font-size-sm)',
+    fontWeight: active
+      ? ('var(--font-weight-semibold)' as const)
+      : ('var(--font-weight-medium)' as const),
+    color: active ? 'var(--color-accent)' : 'var(--color-text)',
+    backgroundColor: active ? 'var(--color-accent-soft)' : 'transparent',
+    border: 'none',
+    borderRadius: 'var(--radius-md)',
+    cursor: 'pointer',
+    transition: 'background-color var(--transition-fast), color var(--transition-fast)',
+    overflow: 'hidden' as const,
+    textOverflow: 'ellipsis' as const,
+    whiteSpace: 'nowrap' as const,
+  };
+}
 
 export function WorkspaceSwitcher() {
   const { data: workspaces, isLoading } = useWorkspaces();
@@ -51,22 +63,32 @@ export function WorkspaceSwitcher() {
     ? (urlValue as string)
     : workspaces[0].id;
 
-  const handleChange = (event: ChangeEvent<HTMLSelectElement>) => {
+  const handleSelect = (id: string) => {
     const next = new URLSearchParams(searchParams);
-    next.set('workspace', event.target.value);
+    next.set('workspace', id);
     setSearchParams(next);
   };
 
   return (
-    <label style={labelStyle}>
-      <span style={captionStyle}>Workspace</span>
-      <select value={selectedId} onChange={handleChange} style={selectStyle}>
-        {workspaces.map((workspace) => (
-          <option key={workspace.id} value={workspace.id}>
-            {workspace.name}
-          </option>
-        ))}
-      </select>
-    </label>
+    <div>
+      <p style={captionStyle}>Workspaces</p>
+      <ul style={listStyle}>
+        {workspaces.map((workspace) => {
+          const active = workspace.id === selectedId;
+          return (
+            <li key={workspace.id}>
+              <button
+                type="button"
+                onClick={() => handleSelect(workspace.id)}
+                style={workspaceItemStyle(active)}
+                title={workspace.name}
+              >
+                {workspace.name}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }

@@ -4030,3 +4030,22 @@ Follow-up risk / notes:
 - Cascade deletes are explicit (no JPA cascade). Order matters: dependencies → comments → tasks → columns → project members → projects → workspace members → workspace.
 - `countByUserIdAndRole(userId, OWNER)` counts all workspaces where the user is OWNER — prevents deleting the last owned workspace even if the user is a member of others' workspaces.
 - Next pending task: TASK-111 (Replace workspace dropdown with vertical sidebar list — frontend).
+
+## 2026-04-29 — TASK-111: Replace workspace dropdown with vertical sidebar list
+
+What changed:
+- Rewrote `frontend/src/modules/workspace/components/WorkspaceSwitcher.tsx` entirely:
+  - Removed the `<select>` dropdown.
+  - Now renders a `<ul>` vertical list of workspace items (one `<button>` per workspace), styled similarly to a chat-list sidebar.
+  - Active workspace highlighted with `--color-accent` text and `--color-accent-soft` background; inactive items are transparent with `--color-text`.
+  - Clicking any item sets `?workspace={id}` in URL searchParams (same mechanism as before), so DashboardPage reloads projects automatically.
+  - Long workspace names are truncated with `text-overflow: ellipsis` and a `title` tooltip shows the full name.
+  - Smooth transition on background-color and color via `--transition-fast`.
+- No changes to AppShell.tsx — it already renders `<WorkspaceSwitcher />` with the right layout.
+
+What was tested:
+- `npm run build` → 450 modules, 0 TypeScript errors, BUILD SUCCESS.
+
+Follow-up risk / notes:
+- No hover styling added (could be a nice touch via CSS :hover — currently uses transparent bg on non-active items).
+- TASK-112 (create/rename/delete workspaces from sidebar) is next; it will extend this list with additional controls.
