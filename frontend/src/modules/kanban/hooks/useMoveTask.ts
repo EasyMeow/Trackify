@@ -14,7 +14,8 @@ export function useMoveTask(projectId: string | undefined) {
   return useMutation<TaskResponse, Error, MoveTaskVariables>({
     mutationFn: ({ taskId, columnId, sortOrder }) =>
       taskApi.moveTask(taskId, { columnId, sortOrder }),
-    onSuccess: () => {
+    onSuccess: (updatedTask, { taskId }) => {
+      queryClient.setQueryData(['tasks', taskId], updatedTask);
       queryClient.invalidateQueries({
         queryKey: ['projects', projectId, 'board'],
       });

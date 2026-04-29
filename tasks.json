@@ -2276,6 +2276,246 @@
         "TASK-118"
       ],
       "status": "done"
+    },
+    {
+      "id": "TASK-120",
+      "phase": "Bug fixes",
+      "category": "kanban",
+      "priority": "critical",
+      "description": "Fix task status not updating when moving between columns, and add a status selector to the task edit drawer.",
+      "start_condition": "Task status remains unchanged after dragging a card to a different column, and there is no status field in the task drawer.",
+      "acceptance_criteria": [
+        "Moving a card to a different column persists the corresponding status so that reopening the task drawer or reloading shows the updated status.",
+        "The task edit drawer includes a status (column) selector; changing it moves the card to the chosen column and refreshes the board."
+      ],
+      "test_steps": [
+        "Drag a task to a different column, reload, open the drawer, and confirm the status field matches the destination column.",
+        "Change the status from the drawer selector, reload, and confirm the card appears in the correct column."
+      ],
+      "dependencies": [
+        "TASK-119"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "TASK-121",
+      "phase": "Bug fixes",
+      "category": "timeline",
+      "priority": "high",
+      "description": "Fix the Gantt chart being clipped at the viewport width instead of scrolling horizontally.",
+      "start_condition": "The Gantt chart area is cut off at the right edge of the screen with no horizontal scroll, hiding bars and date column headers.",
+      "acceptance_criteria": [
+        "The timeline page wraps the Gantt component in a horizontally scrollable container so bars and date headers beyond the viewport are reachable by scrolling right.",
+        "The left-side table (Name, From, To) remains visible and does not disappear on horizontal scroll."
+      ],
+      "test_steps": [
+        "Open the timeline page and confirm that scrolling right reveals bars and date headers that were previously hidden.",
+        "Verify the Name/From/To columns are still accessible after horizontal scrolling."
+      ],
+      "dependencies": [
+        "TASK-120"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-122",
+      "phase": "Bug fixes",
+      "category": "timeline",
+      "priority": "high",
+      "description": "Fix laggy vertical scrolling on the timeline page.",
+      "start_condition": "Scrolling the timeline page vertically stutters noticeably.",
+      "acceptance_criteria": [
+        "Vertical scrolling on the timeline page is smooth without visible jank at a normal display refresh rate."
+      ],
+      "test_steps": [
+        "Open the timeline page with 10+ tasks and scroll vertically; confirm scrolling is smooth without lag."
+      ],
+      "dependencies": [
+        "TASK-121"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-123",
+      "phase": "Bug fixes",
+      "category": "timeline",
+      "priority": "medium",
+      "description": "Truncate long task names in the timeline left-side table and inside Gantt bars.",
+      "start_condition": "Long task names overflow or wrap unconstrained in both the table column and the bar labels.",
+      "acceptance_criteria": [
+        "Task names in the left-side table are clamped to a single line with a trailing ellipsis when they exceed the column width.",
+        "Task names rendered inside Gantt bars are also truncated with an ellipsis and never overflow the bar bounds."
+      ],
+      "test_steps": [
+        "Create a task with a title longer than 40 characters and confirm the name in the table column is single-line with '...'.",
+        "Confirm the bar label for the same task is truncated with '...' and does not overflow the bar."
+      ],
+      "dependencies": [
+        "TASK-122"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-124",
+      "phase": "Bug fixes",
+      "category": "frontend",
+      "priority": "high",
+      "description": "Fix the creation date range filter on the Board page not filtering tasks.",
+      "start_condition": "Selecting a creation date range in the Board filter bar has no visible effect on displayed tasks.",
+      "acceptance_criteria": [
+        "Setting a creation date range hides tasks whose creation date falls outside the range in both Kanban and List views.",
+        "Clearing the date range restores all tasks."
+      ],
+      "test_steps": [
+        "Set a narrow date range that excludes some tasks; confirm only matching tasks appear in Kanban view.",
+        "Switch to List view and confirm the same filter applies.",
+        "Clear the date range and confirm all tasks reappear."
+      ],
+      "dependencies": [
+        "TASK-123"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-125",
+      "phase": "Bug fixes",
+      "category": "frontend",
+      "priority": "high",
+      "description": "Fix the sidebar highlighting the first workspace instead of the active one when navigating inside a project.",
+      "start_condition": "Opening a project board or timeline causes the sidebar to highlight the first workspace regardless of which workspace the project belongs to.",
+      "acceptance_criteria": [
+        "The active workspace highlight in the sidebar always matches the workspace that owns the currently open project."
+      ],
+      "test_steps": [
+        "Create two workspaces; open a project from the second workspace and confirm the sidebar highlights the second workspace, not the first."
+      ],
+      "dependencies": [
+        "TASK-124"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-126",
+      "phase": "Bug fixes",
+      "category": "frontend",
+      "priority": "high",
+      "description": "Fix clicking a workspace in the sidebar not navigating to the dashboard.",
+      "start_condition": "Clicking a workspace in the sidebar updates the active selection but does not redirect to the dashboard.",
+      "acceptance_criteria": [
+        "Clicking any workspace in the sidebar selects it and navigates to the dashboard showing that workspace's projects."
+      ],
+      "test_steps": [
+        "While inside a project, click a different workspace in the sidebar and confirm the app navigates to the dashboard with that workspace's projects."
+      ],
+      "dependencies": [
+        "TASK-125"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-127",
+      "phase": "Bug fixes",
+      "category": "frontend",
+      "priority": "medium",
+      "description": "Replace the Board status filter buttons with a multiselect combobox (dropdown with checkboxes).",
+      "start_condition": "The status filter renders one toggle button per column; with many columns they overflow the filter bar.",
+      "acceptance_criteria": [
+        "The status filter is a single dropdown button labeled 'Status' that opens a list of checkboxes, one per column.",
+        "The button label shows the number of selected statuses when any are active.",
+        "Toggling checkboxes filters tasks in real time in both Kanban and List views.",
+        "The combobox fits in the filter bar regardless of the number of columns."
+      ],
+      "test_steps": [
+        "Open the Board filter bar, click the Status dropdown, select two columns, and confirm only matching tasks are visible in both views.",
+        "With 6+ columns confirm the filter bar does not overflow horizontally."
+      ],
+      "dependencies": [
+        "TASK-126"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-128",
+      "phase": "Bug fixes",
+      "category": "auth",
+      "priority": "high",
+      "description": "Fix avatar upload returning HTTP 500 when the file exceeds the size limit; return HTTP 400 with a user-friendly error instead.",
+      "start_condition": "Uploading an avatar larger than the configured limit causes an unhandled server exception and a 500 response.",
+      "acceptance_criteria": [
+        "`PATCH /api/me` returns HTTP 400 with the standard `ApiError` shape and a human-readable message when the avatar file exceeds the size limit.",
+        "The frontend displays the backend error message as a toast or inline error instead of a generic failure."
+      ],
+      "test_steps": [
+        "Upload an image larger than 1 MB via the profile page and confirm the server returns HTTP 400 (not 500) and the UI shows a friendly error message."
+      ],
+      "dependencies": [
+        "TASK-127"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-129",
+      "phase": "Bug fixes",
+      "category": "frontend",
+      "priority": "high",
+      "description": "Fix the sidebar overflowing the viewport height so the bottom avatar always stays visible.",
+      "start_condition": "With many workspaces the sidebar grows taller than the screen, pushing the avatar below the visible area.",
+      "acceptance_criteria": [
+        "The sidebar is constrained to 100vh at all times.",
+        "The workspace list scrolls independently within the sidebar when it is too long to fit.",
+        "The bottom avatar / user menu remains fixed at the bottom of the sidebar and is always visible without scrolling the page."
+      ],
+      "test_steps": [
+        "Create enough workspaces to overflow the sidebar; confirm the avatar is still visible at the bottom without page-level scrolling.",
+        "Confirm the workspace list scrolls within the sidebar independently."
+      ],
+      "dependencies": [
+        "TASK-128"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-130",
+      "phase": "Hardening and polish",
+      "category": "polish",
+      "priority": "medium",
+      "description": "Replace the pure white (#ffffff) background color with #f8f8f6 throughout the app.",
+      "start_condition": "The app uses #ffffff as the default background for pages, sidebar, cards, and modals.",
+      "acceptance_criteria": [
+        "All surfaces that currently use #ffffff as background (page, sidebar, cards, drawers, modals) use #f8f8f6 instead.",
+        "The change is applied via the existing CSS token/variable so it propagates from a single source of truth."
+      ],
+      "test_steps": [
+        "Run the dev server and confirm no pure-white backgrounds remain on the main screens (dashboard, board, timeline, settings, profile, sign-in).",
+        "Inspect the root CSS variable and confirm it references #f8f8f6."
+      ],
+      "dependencies": [
+        "TASK-129"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-131",
+      "phase": "Timeline and scheduling",
+      "category": "timeline",
+      "priority": "medium",
+      "description": "Add Day and Week view mode toggle to the timeline page, defaulting to Day view.",
+      "start_condition": "The timeline Gantt chart renders in a single fixed granularity with no way to switch view modes.",
+      "acceptance_criteria": [
+        "A segmented toggle with 'Day' and 'Week' options is visible above the Gantt chart.",
+        "Day view is selected by default when the page loads.",
+        "Switching to Week view changes the column headers to weekly labels and rebins the bars accordingly; switching back to Day restores daily headers.",
+        "The selected mode is kept in local component state and does not persist in the URL."
+      ],
+      "test_steps": [
+        "Open the timeline page and confirm Day view is active by default with daily column headers.",
+        "Switch to Week view and confirm weekly column headers appear and bars reflow.",
+        "Switch back to Day view and confirm the layout is restored."
+      ],
+      "dependencies": [
+        "TASK-130"
+      ],
+      "status": "pending"
     }
   ]
 }

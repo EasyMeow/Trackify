@@ -4,8 +4,10 @@ import { useTaskDetail } from '../hooks/useTaskDetail';
 import { useUpdateTask } from '../hooks/useUpdateTask';
 import { useDeleteTask } from '../hooks/useDeleteTask';
 import { useCreateTask } from '../../kanban/hooks/useCreateTask';
+import { useMoveTask } from '../../kanban/hooks/useMoveTask';
 import type { CreateTaskRequest } from '../../kanban/api/taskApi';
 import type { TaskPriority, TaskResponse } from '../../kanban/types/task';
+import type { BoardColumn } from '../../kanban/types/board';
 import { CommentList } from '../../comment/components/CommentList';
 import { CommentComposer } from '../../comment/components/CommentComposer';
 import { TaskDependencyManager } from '../../gantt/components/TaskDependencyManager';
@@ -22,6 +24,7 @@ interface TaskDrawerProps {
   projectId: string;
   onClose: () => void;
   createMode?: boolean;
+  columns?: BoardColumn[];
 }
 
 function fmtDate(iso: string | null): string {
@@ -417,13 +420,15 @@ interface DrawerContentProps {
   taskId: string;
   projectId: string;
   onClose: () => void;
+  columns?: BoardColumn[];
   // parent passes a setter so the outer Escape handler can cancel an in-progress edit
   registerCancelEdit: (fn: (() => void) | null) => void;
 }
 
-function DrawerContent({ data, taskId, projectId, onClose, registerCancelEdit }: DrawerContentProps) {
+function DrawerContent({ data, taskId, projectId, onClose, columns, registerCancelEdit }: DrawerContentProps) {
   const { mutate: updateTask, isPending } = useUpdateTask(taskId, projectId);
   const { mutate: deleteTask, isPending: isDeleting } = useDeleteTask(taskId, projectId);
+  const { mutate: moveTask, isPending: isMoving } = useMoveTask(projectId);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   // draft values — only used while the field is focused; start from current server value
@@ -542,7 +547,25 @@ function DrawerContent({ data, taskId, projectId, onClose, registerCancelEdit }:
         <div style={metaRowStyle}>
           <div style={fieldStyle}>
             <span style={labelStyle}>Status</span>
-            <span style={statusBadgeStyle(data.status)}>{data.status.replace('_', ' ')}</span>
+            {columns && columns.length > 0 ? (
+              <select
+                style={editControlStyle}
+                value={data.columnId}
+                disabled={isPending || isMoving}
+                aria-label="Task status"
+                onChange={(e) => {
+                  const newColumnId = e.target.value;
+                  if (newColumnId === data.columnId) return;
+                  moveTask({ taskId, columnId: newColumnId, sortOrder: data.sortOrder });
+                }}
+              >
+                {columns.map((col) => (
+                  <option key={col.id} value={col.id}>{col.name}</option>
+                ))}
+              </select>
+            ) : (
+              <span style={statusBadgeStyle(data.status)}>{data.status.replace(/_/g, ' ')}</span>
+            )}
           </div>
           <div style={fieldStyle}>
             <span style={labelStyle}>Priority</span>
@@ -654,7 +677,7 @@ function DrawerContent({ data, taskId, projectId, onClose, registerCancelEdit }:
 
 // ---------- outer shell ----------
 
-export function TaskDrawer({ taskId, projectId, onClose, createMode }: TaskDrawerProps) {
+export function TaskDrawer({ taskId, projectId, onClose, createMode, columns }: TaskDrawerProps) {
   const { data, isLoading, isError } = useTaskDetail(taskId);
 
   // cancelEditRef holds a function that DrawerContent registers when a field is focused.
@@ -714,6 +737,7 @@ export function TaskDrawer({ taskId, projectId, onClose, createMode }: TaskDrawe
             taskId={taskId!}
             projectId={projectId}
             onClose={onClose}
+            columns={columns}
             registerCancelEdit={(fn) => { cancelEditRef.current = fn; }}
           />
         )}

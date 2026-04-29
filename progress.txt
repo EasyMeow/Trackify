@@ -4248,3 +4248,23 @@ Follow-up risk:
 
 ### Follow-up risk
 - None — this was the last pending task. All 119 tasks are now done.
+
+---
+## TASK-120 — Fix task status after column move + status selector in drawer (2026-04-29)
+
+### What changed
+- `frontend/src/modules/kanban/hooks/useMoveTask.ts`: on success, now calls `queryClient.setQueryData(['tasks', taskId], updatedTask)` so the drawer's task-detail cache is updated immediately without a refetch.
+- `frontend/src/modules/task/components/TaskDrawer.tsx`:
+  - Added `columns?: BoardColumn[]` prop to `TaskDrawerProps` and `DrawerContentProps`.
+  - Added `useMoveTask` hook to `DrawerContent`.
+  - Status field: when `columns` prop is provided (board context), renders a `<select>` of column names keyed by `data.columnId`; changing selection calls `moveTask`. Falls back to the read-only status badge when columns are unavailable.
+- `frontend/src/pages/ProjectBoardPage.tsx`: passes `columns={data?.columns}` to `TaskDrawer`.
+
+### Root cause
+`useMoveTask.onSuccess` only invalidated the board query, leaving the `['tasks', taskId]` cache stale. The status badge was also read-only with no selector.
+
+### What was tested
+- `npm run build`: 459 modules, no TypeScript errors, exit 0.
+
+### Follow-up risk
+- The drawer uses `data.columnId` to determine the selected column. If the board columns haven't loaded yet when the drawer opens, the select falls back to the badge — acceptable.

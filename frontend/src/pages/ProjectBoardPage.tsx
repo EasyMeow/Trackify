@@ -358,6 +358,7 @@ export default function ProjectBoardPage() {
         taskId={selectedTaskId}
         projectId={projectId ?? ''}
         createMode={isCreating && !selectedTaskId}
+        columns={data?.columns}
         onClose={() => {
           setSelectedTaskId(null);
           setIsCreating(false);
