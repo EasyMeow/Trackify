@@ -3994,3 +3994,21 @@ Follow-up risk / notes:
 - No cap on workspace count per user — if that becomes a requirement, add a service-level check.
 - Slug collision loop does a single retry; extremely unlikely to collide twice in practice.
 - Next pending task: TASK-109 (PATCH /api/workspaces/{id} — rename workspace).
+
+## 2026-04-29 — TASK-109: PATCH /api/workspaces/{id} (rename workspace)
+
+What changed:
+- New `RenameWorkspaceRequest.java` DTO: `@NotBlank @Size(max=255) String name`.
+- New `WorkspaceRenameService.java` `@Service`: `@Transactional rename(workspaceId, userId, request)` loads workspace (NotFoundException if not found), verifies caller is OWNER via new `existsByWorkspaceIdAndUserIdAndRole` repo method (ForbiddenException if not), updates name, saves, returns WorkspaceResponse.
+- `WorkspaceMemberRepository`: added `existsByWorkspaceIdAndUserIdAndRole` derived query method for OWNER check.
+- `WorkspaceController`: added `WorkspaceRenameService` constructor arg + `@PatchMapping("/{id}")` returning updated workspace payload (200).
+- `WorkspaceRenameControllerTest.java` (new): 5 WebMvcTest cases — owner rename → 200; non-owner → 403; unknown workspace → 404; blank name → 400 VALIDATION_FAILED; unauthenticated → 401.
+- Updated `WorkspaceControllerTest` and `WorkspaceCreateControllerTest` to add `@MockitoBean WorkspaceRenameService` (required by new constructor arg).
+
+What was tested:
+- `./mvnw -q compile test-compile` → success.
+- `./mvnw test` → 168 tests, 0 failures, BUILD SUCCESS.
+
+Follow-up risk / notes:
+- No slug update on rename (slug stays as originally generated). This is intentional — slugs are stable identifiers.
+- Next pending task: TASK-110 (DELETE /api/workspaces/{id} — cascade delete + last-workspace guard).

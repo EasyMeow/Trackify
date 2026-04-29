@@ -12,6 +12,7 @@ import com.trackify.config.SecurityConfig;
 import com.trackify.config.WebConfig;
 import com.trackify.workspace.application.WorkspaceCreateService;
 import com.trackify.workspace.application.WorkspaceQueryService;
+import com.trackify.workspace.application.WorkspaceRenameService;
 import com.trackify.workspace.dto.WorkspaceResponse;
 
 import org.junit.jupiter.api.Test;
@@ -56,6 +57,9 @@ class WorkspaceControllerTest {
 
     @MockitoBean
     private WorkspaceCreateService workspaceCreateService;
+
+    @MockitoBean
+    private WorkspaceRenameService workspaceRenameService;
 
     // ---------------------------------------------------------------------------
     // Happy path: authenticated user gets exactly their own workspaces

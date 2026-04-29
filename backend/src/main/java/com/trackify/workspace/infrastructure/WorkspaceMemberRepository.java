@@ -15,4 +15,7 @@ public interface WorkspaceMemberRepository extends JpaRepository<WorkspaceMember
     List<WorkspaceMember> findAllByUserId(UUID userId);
 
     boolean existsByWorkspaceIdAndUserId(UUID workspaceId, UUID userId);
+
+    boolean existsByWorkspaceIdAndUserIdAndRole(UUID workspaceId, UUID userId,
+            com.trackify.workspace.domain.WorkspaceRole role);
 }

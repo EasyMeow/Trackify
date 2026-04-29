@@ -6,21 +6,21 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trackify.auth.application.LocalUserPrincipal;
+import com.trackify.common.exception.ForbiddenException;
+import com.trackify.common.exception.NotFoundException;
 import com.trackify.config.JacksonConfig;
 import com.trackify.config.SecurityConfig;
 import com.trackify.config.WebConfig;
 import com.trackify.workspace.application.WorkspaceCreateService;
 import com.trackify.workspace.application.WorkspaceQueryService;
 import com.trackify.workspace.application.WorkspaceRenameService;
-import com.trackify.workspace.dto.CreateWorkspaceRequest;
+import com.trackify.workspace.dto.RenameWorkspaceRequest;
 import com.trackify.workspace.dto.WorkspaceResponse;
 
 import org.junit.jupiter.api.Test;
@@ -38,13 +38,14 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * TASK-108: verifies {@code POST /api/workspaces} behaviour.
+ * TASK-109: verifies {@code PATCH /api/workspaces/{id}} behaviour.
  *
  * <ul>
- *   <li>Valid request creates workspace with the current user as OWNER and returns 201.
- *   <li>Created workspace appears in the subsequent {@code GET /api/workspaces} response.
- *   <li>Blank name is rejected with 400 VALIDATION_FAILED.
- *   <li>Unauthenticated request is rejected with 401.
+ *   <li>Owner can rename the workspace (200).
+ *   <li>Non-member/non-owner is rejected (403).
+ *   <li>Unknown workspace is rejected (404).
+ *   <li>Blank name is rejected (400).
+ *   <li>Unauthenticated request is rejected (401).
  * </ul>
  */
 @WebMvcTest(controllers = WorkspaceController.class)
@@ -55,7 +56,7 @@ import java.util.UUID;
         "trackify.cors.allowed-headers=*",
         "trackify.cors.allow-credentials=true"
 })
-class WorkspaceCreateControllerTest {
+class WorkspaceRenameControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
@@ -73,118 +74,120 @@ class WorkspaceCreateControllerTest {
     private WorkspaceRenameService workspaceRenameService;
 
     // -------------------------------------------------------------------------
-    // Happy path: authenticated user creates a workspace and gets 201
+    // Happy path: owner renames workspace → 200
     // -------------------------------------------------------------------------
 
     @Test
-    void authenticatedUserCanCreateWorkspace() throws Exception {
+    void ownerCanRenameWorkspace() throws Exception {
         UUID userId = UUID.randomUUID();
+        UUID wsId = UUID.randomUUID();
         LocalUserPrincipal principal = new LocalUserPrincipal(userId, "alice", "hashed-pw");
         Authentication auth = new UsernamePasswordAuthenticationToken(principal, null, List.of());
 
-        UUID newWsId = UUID.randomUUID();
-        WorkspaceResponse serviceResult = new WorkspaceResponse(newWsId, "My Team", "my-team");
+        WorkspaceResponse updated = new WorkspaceResponse(wsId, "Renamed Workspace", "renamed-workspace");
+        when(workspaceRenameService.rename(eq(wsId), eq(userId), any(RenameWorkspaceRequest.class)))
+                .thenReturn(updated);
 
-        when(workspaceCreateService.create(eq(userId), any(CreateWorkspaceRequest.class)))
-                .thenReturn(serviceResult);
+        String body = objectMapper.writeValueAsString(new RenameWorkspaceRequest("Renamed Workspace"));
 
-        CreateWorkspaceRequest requestBody = new CreateWorkspaceRequest("My Team");
-
-        mockMvc.perform(post("/api/workspaces")
+        mockMvc.perform(patch("/api/workspaces/" + wsId)
                         .with(authentication(auth))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(requestBody)))
-                .andExpect(status().isCreated())
-                .andExpect(header().string("Location",
-                        org.hamcrest.Matchers.containsString("/api/workspaces/" + newWsId)))
-                .andExpect(jsonPath("$.id").value(newWsId.toString()))
-                .andExpect(jsonPath("$.name").value("My Team"))
-                .andExpect(jsonPath("$.slug").value("my-team"));
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(wsId.toString()))
+                .andExpect(jsonPath("$.name").value("Renamed Workspace"))
+                .andExpect(jsonPath("$.slug").value("renamed-workspace"));
 
-        verify(workspaceCreateService).create(eq(userId), any(CreateWorkspaceRequest.class));
+        verify(workspaceRenameService).rename(eq(wsId), eq(userId), any(RenameWorkspaceRequest.class));
     }
 
     // -------------------------------------------------------------------------
-    // Scenario (b): created workspace appears in GET /api/workspaces
+    // Non-owner/non-member is rejected with 403
     // -------------------------------------------------------------------------
 
     @Test
-    void createdWorkspaceAppearsInSubsequentGetListing() throws Exception {
+    void nonOwnerIsRejectedWith403() throws Exception {
         UUID userId = UUID.randomUUID();
+        UUID wsId = UUID.randomUUID();
         LocalUserPrincipal principal = new LocalUserPrincipal(userId, "bob", "hashed-pw");
         Authentication auth = new UsernamePasswordAuthenticationToken(principal, null, List.of());
 
-        UUID existingWsId = UUID.randomUUID();
-        UUID newWsId = UUID.randomUUID();
+        when(workspaceRenameService.rename(eq(wsId), eq(userId), any(RenameWorkspaceRequest.class)))
+                .thenThrow(new ForbiddenException("Only workspace owners may rename the workspace."));
 
-        WorkspaceResponse newWs = new WorkspaceResponse(newWsId, "New Workspace", "new-workspace");
+        String body = objectMapper.writeValueAsString(new RenameWorkspaceRequest("New Name"));
 
-        when(workspaceCreateService.create(eq(userId), any(CreateWorkspaceRequest.class)))
-                .thenReturn(newWs);
-
-        // After creation, the query service now returns both workspaces.
-        when(workspaceQueryService.listForUser(userId)).thenReturn(List.of(
-                new WorkspaceResponse(existingWsId, "Bob's workspace", "bob"),
-                newWs
-        ));
-
-        // Step 1: create.
-        mockMvc.perform(post("/api/workspaces")
+        mockMvc.perform(patch("/api/workspaces/" + wsId)
                         .with(authentication(auth))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new CreateWorkspaceRequest("New Workspace"))))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.id").value(newWsId.toString()));
-
-        // Step 2: list — the new workspace must be present.
-        mockMvc.perform(get("/api/workspaces").with(authentication(auth)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(2))
-                .andExpect(jsonPath("$[1].id").value(newWsId.toString()))
-                .andExpect(jsonPath("$[1].name").value("New Workspace"))
-                .andExpect(jsonPath("$[1].slug").value("new-workspace"));
+                        .content(body))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403));
     }
 
     // -------------------------------------------------------------------------
-    // Validation: blank name returns 400
+    // Unknown workspace → 404
+    // -------------------------------------------------------------------------
+
+    @Test
+    void unknownWorkspaceReturns404() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID wsId = UUID.randomUUID();
+        LocalUserPrincipal principal = new LocalUserPrincipal(userId, "alice", "hashed-pw");
+        Authentication auth = new UsernamePasswordAuthenticationToken(principal, null, List.of());
+
+        when(workspaceRenameService.rename(eq(wsId), eq(userId), any(RenameWorkspaceRequest.class)))
+                .thenThrow(new NotFoundException("Workspace not found: " + wsId));
+
+        String body = objectMapper.writeValueAsString(new RenameWorkspaceRequest("New Name"));
+
+        mockMvc.perform(patch("/api/workspaces/" + wsId)
+                        .with(authentication(auth))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.status").value(404));
+    }
+
+    // -------------------------------------------------------------------------
+    // Blank name → 400 VALIDATION_FAILED
     // -------------------------------------------------------------------------
 
     @Test
     void blankNameIsRejectedWith400() throws Exception {
         UUID userId = UUID.randomUUID();
+        UUID wsId = UUID.randomUUID();
         LocalUserPrincipal principal = new LocalUserPrincipal(userId, "alice", "hashed-pw");
         Authentication auth = new UsernamePasswordAuthenticationToken(principal, null, List.of());
 
-        String badBody = """
-                {"name":"   "}
-                """;
+        String body = "{\"name\":\"   \"}";
 
-        mockMvc.perform(post("/api/workspaces")
+        mockMvc.perform(patch("/api/workspaces/" + wsId)
                         .with(authentication(auth))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(badBody))
+                        .content(body))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value(400))
                 .andExpect(jsonPath("$.error").value("VALIDATION_FAILED"));
 
-        verifyNoInteractions(workspaceCreateService);
+        verifyNoInteractions(workspaceRenameService);
     }
 
     // -------------------------------------------------------------------------
-    // Security: unauthenticated request returns 401
+    // Unauthenticated → 401
     // -------------------------------------------------------------------------
 
     @Test
-    void unauthenticatedPostIsRejectedWith401() throws Exception {
-        String body = """
-                {"name":"Some Workspace"}
-                """;
+    void unauthenticatedRequestIsRejectedWith401() throws Exception {
+        UUID wsId = UUID.randomUUID();
+        String body = "{\"name\":\"Whatever\"}";
 
-        mockMvc.perform(post("/api/workspaces")
+        mockMvc.perform(patch("/api/workspaces/" + wsId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isUnauthorized());
 
-        verifyNoInteractions(workspaceCreateService);
+        verifyNoInteractions(workspaceRenameService);
     }
 }
