@@ -5,6 +5,7 @@ interface BoardListViewProps {
   columns: BoardColumn[];
   selectedTaskId: string | null;
   onSelectTask: (id: string) => void;
+  isFiltered?: boolean;
 }
 
 const PRIORITY_COLORS: Record<TaskPriority, string> = {
@@ -19,7 +20,7 @@ function fmt(dateStr: string | null): string {
   return format(new Date(dateStr), 'MMM d, yyyy');
 }
 
-export function BoardListView({ columns, selectedTaskId, onSelectTask }: BoardListViewProps) {
+export function BoardListView({ columns, selectedTaskId, onSelectTask, isFiltered }: BoardListViewProps) {
   const tasks: Array<BoardTaskCard & { columnName: string }> = columns.flatMap((col) =>
     col.tasks.map((t) => ({ ...t, columnName: col.name }))
   );
@@ -27,7 +28,7 @@ export function BoardListView({ columns, selectedTaskId, onSelectTask }: BoardLi
   if (tasks.length === 0) {
     return (
       <p style={{ margin: 0, color: 'var(--color-text-muted)', fontSize: 'var(--font-size-sm)' }}>
-        No tasks yet.
+        {isFiltered ? 'No tasks match your filters.' : 'No tasks yet.'}
       </p>
     );
   }

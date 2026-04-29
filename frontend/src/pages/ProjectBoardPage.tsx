@@ -19,6 +19,7 @@ import { useReorderColumns } from '../modules/kanban/hooks/useReorderColumns';
 import { ProjectNav } from '../modules/project/components/ProjectNav';
 import { BoardColumnView } from '../modules/kanban/components/BoardColumnView';
 import { BoardListView } from '../modules/kanban/components/BoardListView';
+import { BoardFilters, type BoardFilterValues } from '../modules/kanban/components/BoardFilters';
 import { TaskCard } from '../modules/kanban/components/TaskCard';
 import { useSelectedTaskId } from '../modules/task/hooks/useSelectedTaskId';
 import { TaskDrawer } from '../modules/task/components/TaskDrawer';
@@ -118,6 +119,12 @@ export default function ProjectBoardPage() {
   const [activeTask, setActiveTask] = useState<BoardTaskCard | null>(null);
   const [activeColumnId, setActiveColumnId] = useState<string | null>(null);
   const [columnOrderOverride, setColumnOrderOverride] = useState<string[] | null>(null);
+  const [filters, setFilters] = useState<BoardFilterValues>({
+    titleSearch: '',
+    selectedColumnIds: [],
+    dateFrom: '',
+    dateTo: '',
+  });
 
   const displayColumns = useMemo<BoardColumn[]>(() => {
     if (!data) return [];
@@ -127,6 +134,32 @@ export default function ProjectBoardPage() {
     }
     return withTaskOverrides;
   }, [data, dragOverrides, columnOrderOverride]);
+
+  const filteredColumns = useMemo<BoardColumn[]>(() => {
+    const { titleSearch, selectedColumnIds, dateFrom, dateTo } = filters;
+    const noFilter =
+      titleSearch === '' && selectedColumnIds.length === 0 && dateFrom === '' && dateTo === '';
+    if (noFilter) return displayColumns;
+
+    const fromMs = dateFrom ? new Date(dateFrom).getTime() : null;
+    // dateTo is end-of-day inclusive — add 23:59:59.999
+    const toMs = dateTo ? new Date(dateTo).getTime() + 86399999 : null;
+
+    // Always preserve all columns (Kanban shows empty columns); filter tasks within each column.
+    return displayColumns.map((col) => ({
+      ...col,
+      tasks: col.tasks.filter((task) => {
+        if (selectedColumnIds.length > 0 && !selectedColumnIds.includes(col.id)) return false;
+        if (titleSearch && !task.title.toLowerCase().includes(titleSearch.toLowerCase())) return false;
+        if (fromMs !== null || toMs !== null) {
+          const createdMs = new Date(task.createdAt).getTime();
+          if (fromMs !== null && createdMs < fromMs) return false;
+          if (toMs !== null && createdMs > toMs) return false;
+        }
+        return true;
+      }),
+    }));
+  }, [displayColumns, filters]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -248,11 +281,21 @@ export default function ProjectBoardPage() {
         <p style={mutedStyle}>This board has no columns yet.</p>
       )}
 
+      {!isLoading && !isError && data && displayColumns.length > 0 && (
+        <BoardFilters columns={data.columns} filters={filters} onChange={setFilters} />
+      )}
+
       {!isLoading && !isError && data && viewMode === 'list' && (
         <BoardListView
-          columns={displayColumns}
+          columns={filteredColumns}
           selectedTaskId={selectedTaskId}
           onSelectTask={setSelectedTaskId}
+          isFiltered={
+            filters.titleSearch !== '' ||
+            filters.selectedColumnIds.length > 0 ||
+            filters.dateFrom !== '' ||
+            filters.dateTo !== ''
+          }
         />
       )}
 
@@ -263,7 +306,7 @@ export default function ProjectBoardPage() {
               items={displayColumns.map((c) => c.id)}
               strategy={horizontalListSortingStrategy}
             >
-              {displayColumns.map((column) => (
+              {filteredColumns.map((column) => (
                 <BoardColumnView
                   key={column.id}
                   column={column}

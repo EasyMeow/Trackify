@@ -3954,3 +3954,25 @@ What was tested:
 
 Follow-up:
 - TASK-107 (board filters: title search, status multi-select, date range) is next.
+
+## 2026-04-29 — TASK-107: Board filters (title search, status multi-select, date range)
+
+What changed:
+- Created `frontend/src/modules/kanban/components/BoardFilters.tsx`: a filter bar component with title text search (substring, case-insensitive), status column multi-select (toggle chips for each column), and creation date range (from/to date pickers). Includes a "Clear" button shown when any filter is active.
+- Modified `frontend/src/pages/ProjectBoardPage.tsx`:
+  - Added `filters` state (`BoardFilterValues`) with all values initialized empty.
+  - Added `filteredColumns` derived memo (after `displayColumns` so DnD overrides apply first). Status filter hides tasks within non-selected columns while preserving all column headers. Title search is case-insensitive substring. Date range is inclusive end-of-day.
+  - DnD drag resolution (move task, column reorder) still uses `displayColumns` (unfiltered) so drag is unaffected by active filters.
+  - `filteredColumns` is passed to both `BoardColumnView` render loop and `BoardListView`.
+  - `BoardFilters` rendered between column-empty-state check and content views, using `data.columns` (all columns, unfiltered) so status chips don't disappear as filters narrow results.
+  - `isFiltered` prop added to `BoardListView` call for correct empty-state message.
+- Modified `frontend/src/modules/kanban/components/BoardListView.tsx`: added optional `isFiltered` prop; empty state shows "No tasks match your filters." when filtering is active vs "No tasks yet." otherwise.
+
+What was tested:
+- `npm run build` — succeeds with no TypeScript errors.
+- Kanban view: all columns preserved when status filter is active; tasks within non-selected columns are hidden; "No tasks" shown in empty columns.
+- List view: only tasks from selected columns/matching title/within date range are shown; empty state message changes based on whether filters are active.
+
+Follow-up risk / notes:
+- Kanban DnD while filters are active: if a card is filtered-out it can't be dragged (since it's not rendered), but the user can clear filters first. DnD on visible cards still works correctly since DnD logic uses unfiltered `displayColumns`.
+- Next pending task: TASK-108 (POST /api/workspaces — backend).
