@@ -4103,3 +4103,19 @@ Follow-up risk / notes:
 - The `position: fixed` dropdown for AvatarMenu recalculates position on open; doesn't reposition on window resize while open (edge case).
 - ProfilePage is a placeholder; TASK-117 builds the real profile page.
 - Next pending task: TASK-114 (extend users table with avatar BLOB + content_type column — backend).
+
+## 2026-04-29 — TASK-114: Extend users table with avatar columns
+
+What changed:
+- `V10__user_avatar.sql`: Flyway migration adds `avatar BYTEA` and `avatar_content_type TEXT` columns (both nullable) to the `users` table using `ADD COLUMN IF NOT EXISTS` so it's idempotent.
+- `User.java`: Added `avatar` (byte[]) with `@Lob` + `@Basic(fetch = FetchType.LAZY)` and `avatar_content_type` (String) fields, plus getters/setters.
+
+What was tested:
+- `./mvnw compile test-compile` → success, 0 errors.
+- `./mvnw test` → 173 tests pass, BUILD SUCCESS.
+- Flyway ran V10 on backend startup and recorded it in flyway_schema_history.
+- Confirmed `avatar` (bytea) and `avatar_content_type` (text) columns exist in the local PostgreSQL `users` table.
+
+Follow-up risk / notes:
+- `@Basic(fetch = FetchType.LAZY)` on a byte[] field requires Hibernate bytecode instrumentation to be truly lazy. Without it, the field is eagerly loaded at query time. For the MVP this is acceptable — avatar bytes are not included in any DTO yet. TASK-115 adds the endpoints that explicitly load/serve avatar bytes.
+- Next pending task: TASK-115 (PATCH /api/me + GET /api/users/{id}/avatar endpoints).
