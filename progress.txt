@@ -4268,3 +4268,21 @@ Follow-up risk:
 
 ### Follow-up risk
 - The drawer uses `data.columnId` to determine the selected column. If the board columns haven't loaded yet when the drawer opens, the select falls back to the badge — acceptable.
+
+---
+## TASK-121 + TASK-122 — Timeline horizontal scroll and vertical scroll lag (2026-04-29)
+
+### What changed
+- `frontend/src/pages/ProjectTimelinePage.tsx`:
+  - Wrapped `<Gantt>` in `<div style={ganttWrapperStyle}>` with `overflowX: 'auto'` so the chart scrolls horizontally within the page instead of being clipped.
+  - Removed `ganttHeight={400}` prop — this was creating an internal 400px scrollable area inside gantt-task-react, which conflicted with page-level scroll and caused jank. Without it, the component expands to its natural height and the page scrolls vertically in a single scroll context.
+
+### Root cause
+- Horizontal clip: `<main>` has `minWidth: 0` (flex shrink), so the Gantt's generated width was silently clipped. A wrapper with `overflow-x: auto` creates a scroll container.
+- Vertical lag: `ganttHeight` made gantt-task-react render an inner scroll div. Two nested scroll contexts on the same axis cause browser compositing conflicts → jank.
+
+### What was tested
+- `npm run build`: 459 modules, no TypeScript errors, exit 0.
+
+### Follow-up risk
+- Without `ganttHeight`, very large task lists will make the timeline page tall. Acceptable for MVP.

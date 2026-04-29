@@ -80,16 +80,17 @@ export default function ProjectTimelinePage() {
     <section style={sectionStyle}>
       <ProjectNav projectId={projectId} />
       <h1>Project timeline</h1>
-      <Gantt
-        tasks={ganttTasks}
-        viewMode={ViewMode.Week}
-        listCellWidth="180px"
-        ganttHeight={400}
-        barBackgroundColor="var(--color-accent-soft)"
-        barBackgroundSelectedColor="var(--color-accent)"
-        todayColor="rgba(74, 139, 111, 0.12)"
-        onDateChange={handleDateChange}
-      />
+      <div style={ganttWrapperStyle}>
+        <Gantt
+          tasks={ganttTasks}
+          viewMode={ViewMode.Week}
+          listCellWidth="180px"
+          barBackgroundColor="var(--color-accent-soft)"
+          barBackgroundSelectedColor="var(--color-accent)"
+          todayColor="rgba(74, 139, 111, 0.12)"
+          onDateChange={handleDateChange}
+        />
+      </div>
       {datelessCount > 0 && (
         <p style={mutedStyle}>
           {datelessCount} task{datelessCount !== 1 ? 's' : ''} not shown — no
@@ -105,6 +106,12 @@ const sectionStyle: React.CSSProperties = {
   flexDirection: 'column',
   gap: 'var(--space-4)',
   padding: 'var(--space-6)',
+};
+
+const ganttWrapperStyle: React.CSSProperties = {
+  overflowX: 'auto',
+  overflowY: 'visible',
+  width: '100%',
 };
 
 const mutedStyle: React.CSSProperties = {
