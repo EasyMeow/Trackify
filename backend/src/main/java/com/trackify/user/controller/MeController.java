@@ -1,18 +1,27 @@
 package com.trackify.user.controller;
 
 import com.trackify.auth.application.LocalUserPrincipal;
+import com.trackify.user.application.ChangePasswordService;
 import com.trackify.user.application.MeService;
 import com.trackify.user.application.UpdateMeService;
+import com.trackify.user.dto.ChangePasswordRequest;
 import com.trackify.user.dto.MeResponse;
 
+import jakarta.validation.Valid;
+
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+
+import java.util.Map;
 
 /**
  * Exposes the current signed-in user's identity (TASK-028).
@@ -33,10 +42,15 @@ public class MeController {
 
     private final MeService meService;
     private final UpdateMeService updateMeService;
+    private final ChangePasswordService changePasswordService;
 
-    public MeController(MeService meService, UpdateMeService updateMeService) {
+    public MeController(
+            MeService meService,
+            UpdateMeService updateMeService,
+            ChangePasswordService changePasswordService) {
         this.meService = meService;
         this.updateMeService = updateMeService;
+        this.changePasswordService = changePasswordService;
     }
 
     @GetMapping
@@ -50,5 +64,14 @@ public class MeController {
             @RequestParam(required = false) String displayName,
             @RequestParam(required = false) MultipartFile avatar) {
         return updateMeService.update(principal.userId(), displayName, avatar);
+    }
+
+    @PostMapping("/password")
+    public ResponseEntity<Map<String, String>> changePassword(
+            @AuthenticationPrincipal LocalUserPrincipal principal,
+            @Valid @RequestBody ChangePasswordRequest request) {
+        changePasswordService.changePassword(
+                principal.userId(), request.currentPassword(), request.newPassword());
+        return ResponseEntity.ok(Map.of("message", "Password updated successfully"));
     }
 }

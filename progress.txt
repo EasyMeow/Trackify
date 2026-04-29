@@ -4155,3 +4155,19 @@ Follow-up risk / notes:
 - `@Basic(fetch = FetchType.LAZY)` on User.avatar behaves as eager without bytecode instrumentation. Acceptable for MVP — avatar bytes load on any user lookup that hits the DB for the avatar endpoint.
 - `AvatarController` accesses `UserRepository` directly (no service layer) — simple enough to justify.
 - Next pending task: TASK-116 (POST /api/me/password — password change endpoint).
+
+## 2026-04-29 — TASK-116: POST /api/me/password
+
+What changed:
+- `ChangePasswordService`, `ChangePasswordRequest`, and the `POST /api/me/password` handler in `MeController` were already partially implemented as untracked files; wired them together and fixed tests.
+- Added `@MockitoBean ChangePasswordService` to `MeControllerTest` (context failed to load without it).
+- Added 4 controller tests: success (200 + message), wrong current password (400), new password too short (400), blank fields via @Valid (400).
+- Fixed `ChangePasswordServiceTest.wrongCurrentPassword_throwsIllegalArgument` UnnecessaryStubbing error by using `lenient().when(authProperties.password())` in `@BeforeEach` since that stub is only needed in some tests.
+- All tests pass (BUILD SUCCESS).
+
+What was tested:
+- `./mvnw test` — BUILD SUCCESS, 0 failures.
+
+Follow-up risk / notes:
+- Session validity after password change is guaranteed by the service (no session invalidation code), but there is no explicit integration test for it.
+- Next pending task: TASK-117 (frontend /profile page).

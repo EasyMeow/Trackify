@@ -3,9 +3,12 @@ package com.trackify.user.controller;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -13,9 +16,12 @@ import com.trackify.auth.application.LocalUserPrincipal;
 import com.trackify.config.JacksonConfig;
 import com.trackify.config.SecurityConfig;
 import com.trackify.config.WebConfig;
+import com.trackify.user.application.ChangePasswordService;
 import com.trackify.user.application.MeService;
 import com.trackify.user.application.UpdateMeService;
 import com.trackify.user.dto.MeResponse;
+
+import org.springframework.http.MediaType;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -66,6 +72,9 @@ class MeControllerTest {
 
     @MockitoBean
     private UpdateMeService updateMeService;
+
+    @MockitoBean
+    private ChangePasswordService changePasswordService;
 
     @Test
     void authenticatedUserReceivesIdentityPayloadWithoutPasswordHash() throws Exception {
@@ -166,5 +175,68 @@ class MeControllerTest {
         mockMvc.perform(MockMvcRequestBuilders.multipart(HttpMethod.PATCH, "/api/me")
                         .param("displayName", "NewName"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void postPassword_success_returns200WithMessage() throws Exception {
+        UUID userId = UUID.randomUUID();
+        LocalUserPrincipal principal = new LocalUserPrincipal(userId, "alice", "hashed-pw");
+        Authentication auth = new UsernamePasswordAuthenticationToken(principal, null, List.of());
+
+        doNothing().when(changePasswordService).changePassword(userId, "old-pass", "new-pass-ok");
+
+        mockMvc.perform(post("/api/me/password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"currentPassword\":\"old-pass\",\"newPassword\":\"new-pass-ok\"}")
+                        .with(authentication(auth)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("Password updated successfully"));
+    }
+
+    @Test
+    void postPassword_wrongCurrentPassword_returns400() throws Exception {
+        UUID userId = UUID.randomUUID();
+        LocalUserPrincipal principal = new LocalUserPrincipal(userId, "alice", "hashed-pw");
+        Authentication auth = new UsernamePasswordAuthenticationToken(principal, null, List.of());
+
+        doThrow(new IllegalArgumentException("Current password is incorrect"))
+                .when(changePasswordService).changePassword(userId, "wrong", "new-pass-ok");
+
+        mockMvc.perform(post("/api/me/password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"currentPassword\":\"wrong\",\"newPassword\":\"new-pass-ok\"}")
+                        .with(authentication(auth)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("BAD_REQUEST"));
+    }
+
+    @Test
+    void postPassword_newPasswordTooShort_returns400() throws Exception {
+        UUID userId = UUID.randomUUID();
+        LocalUserPrincipal principal = new LocalUserPrincipal(userId, "alice", "hashed-pw");
+        Authentication auth = new UsernamePasswordAuthenticationToken(principal, null, List.of());
+
+        doThrow(new IllegalArgumentException("New password must be at least 8 characters"))
+                .when(changePasswordService).changePassword(userId, "old-pass", "short");
+
+        mockMvc.perform(post("/api/me/password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"currentPassword\":\"old-pass\",\"newPassword\":\"short\"}")
+                        .with(authentication(auth)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("BAD_REQUEST"));
+    }
+
+    @Test
+    void postPassword_blankFields_returns400() throws Exception {
+        UUID userId = UUID.randomUUID();
+        LocalUserPrincipal principal = new LocalUserPrincipal(userId, "alice", "hashed-pw");
+        Authentication auth = new UsernamePasswordAuthenticationToken(principal, null, List.of());
+
+        mockMvc.perform(post("/api/me/password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"currentPassword\":\"\",\"newPassword\":\"\"}")
+                        .with(authentication(auth)))
+                .andExpect(status().isBadRequest());
     }
 }
