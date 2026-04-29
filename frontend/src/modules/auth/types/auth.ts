@@ -26,4 +26,13 @@ export interface RegisterRequest {
   password: string;
 }
 
+export interface ChangePasswordRequest {
+  currentPassword: string;
+  newPassword: string;
+}
+
+export interface ChangePasswordResponse {
+  message: string;
+}
+
 export type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated';

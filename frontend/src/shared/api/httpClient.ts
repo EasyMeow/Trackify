@@ -48,6 +48,34 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   return response.json() as Promise<T>;
 }
 
+async function requestFormData<T>(path: string, formData: FormData): Promise<T> {
+  const response = await fetch(`${BASE_URL}${path}`, {
+    method: 'PATCH',
+    headers: { Accept: 'application/json' },
+    credentials: 'include',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    let code: string | undefined;
+    let message = response.statusText;
+    try {
+      const errorBody = (await response.json()) as Record<string, unknown>;
+      if (typeof errorBody.message === 'string') message = errorBody.message;
+      if (typeof errorBody.code === 'string') code = errorBody.code;
+    } catch {
+      // fall back to statusText already assigned above
+    }
+    throw new ApiError(response.status, code, message);
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  return response.json() as Promise<T>;
+}
+
 export const httpClient = {
   get<T>(path: string): Promise<T> {
     return request<T>('GET', path);
@@ -57,6 +85,9 @@ export const httpClient = {
   },
   patch<T>(path: string, body?: unknown): Promise<T> {
     return request<T>('PATCH', path, body);
+  },
+  patchFormData<T>(path: string, formData: FormData): Promise<T> {
+    return requestFormData<T>(path, formData);
   },
   put<T>(path: string, body?: unknown): Promise<T> {
     return request<T>('PUT', path, body);
