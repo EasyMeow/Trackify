@@ -3,6 +3,7 @@ import { useAuth } from '../modules/auth/hooks/useAuth';
 import { useUpdateMe } from '../modules/auth/hooks/useUpdateMe';
 import { useChangePassword } from '../modules/auth/hooks/useChangePassword';
 import { useAvatarStore } from '../shared/state/avatarStore';
+import { getAvatarColors } from '../shared/utils/avatarColor';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api';
 const MIN_PASSWORD_LENGTH = 8;
@@ -128,6 +129,7 @@ function AvatarSection({ userId, displayName }: { userId: string; displayName: s
 
   const avatarSrc = `${API_BASE}/users/${userId}/avatar?v=${version}`;
   const letter = displayName.trim().charAt(0).toUpperCase() || '?';
+  const { bg: avatarBg, fg: avatarFg } = getAvatarColors(userId);
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -176,8 +178,8 @@ function AvatarSection({ userId, displayName }: { userId: string; displayName: s
             borderRadius: '50%',
             overflow: 'hidden',
             flexShrink: 0,
-            backgroundColor: 'var(--color-accent-soft)',
-            color: 'var(--color-accent)',
+            backgroundColor: avatarBg,
+            color: avatarFg,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',

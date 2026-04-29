@@ -4208,3 +4208,25 @@ Follow-up risk / notes:
 - **`imgError` resets on every version bump**, including the initial 0→0 (no bump). First render: version=0, imgError=false, browser tries `...?v=0`, gets 404, sets imgError=true → letter shown. After first upload: version bumps to 1, effect resets imgError=false, browser tries `...?v=1`, gets 200 → image shown. Correct lifecycle.
 - **FormData for displayName only**: the backend `PATCH /api/me` accepts a multipart with optional fields. Sending just `displayName` without an `avatar` part is valid; the backend checks `if (file != null)` before touching avatar storage. The `useUpdateMe` hook checks `formData.has('avatar')` before calling `bumpVersion()`, so a name-only update does not trigger an unnecessary avatar image reload.
 
+
+## 2026-04-29 — TASK-118: Avatar fallback with deterministic pastel color per user
+
+What changed:
+- `frontend/src/shared/utils/avatarColor.ts` (new): `getAvatarColors(userId)` hashes the user-id string using `Math.imul` to pick one of five hard-coded pastel `{ bg, fg }` pairs derived from the existing design tokens (green, amber, rose, blue, purple soft variants). Same user always maps to the same color.
+- `frontend/src/shared/components/AvatarCircle.tsx` (new): shared component that tries to load `GET /api/users/{userId}/avatar?v={version}`, falls back to the first-letter disc on `onError`. Uses `getAvatarColors` for deterministic background/foreground. Replaces the private `AvatarCircle` that was previously inlined inside AppShell.
+- `frontend/src/app/layouts/AppShell.tsx`: removed local `AvatarCircle` definition and its `API_BASE` constant; imports the shared `AvatarCircle` instead.
+- `frontend/src/pages/ProfilePage.tsx`: added `getAvatarColors` import; the 72px avatar disc in `AvatarSection` now uses `avatarBg`/`avatarFg` from `getAvatarColors(userId)` instead of the static accent tokens.
+- `frontend/src/modules/comment/components/CommentList.tsx`: each comment item now renders a 24px circular avatar showing the author's initial with a deterministic pastel color (derived from `authorId`); `alignItems` in `commentMetaStyle` changed from `baseline` to `center` so the small disc aligns with the text.
+
+What was tested:
+- `npm run build`: 459 modules, BUILD SUCCESS, exit 0.
+- `npx tsc --noEmit`: no errors (exit 0).
+- Browser test not run interactively (Playwright not permitted), but TypeScript + build validate structural correctness.
+
+Design choices:
+- Five-color palette derived from existing token soft variants so the fallback colors fit the pastel theme without introducing new raw hex values (except for the purple pair #e8e0f7 / #7c5cbf, which doesn't exist as a token but matches the design family).
+- `Math.imul`-based hash is deterministic across all JS runtimes (no locale/engine variation), fast, and produces reasonable distribution across 5 slots.
+- Comment author avatars use letter-only circles (no image load attempt) — comment cards could show 10+ different users simultaneously; loading an avatar image per comment would add many parallel fetches for marginal visual benefit.
+
+Follow-up risk:
+- TASK-119 (tab bar slide animation) is now unblocked.

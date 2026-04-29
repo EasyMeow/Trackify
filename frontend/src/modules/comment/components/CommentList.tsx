@@ -1,5 +1,6 @@
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import { useComments } from '../hooks/useComments';
+import { getAvatarColors } from '../../../shared/utils/avatarColor';
 import type React from 'react';
 
 interface CommentListProps {
@@ -29,7 +30,7 @@ const commentItemStyle: React.CSSProperties = {
 
 const commentMetaStyle: React.CSSProperties = {
   display: 'flex',
-  alignItems: 'baseline',
+  alignItems: 'center',
   gap: 'var(--space-2)',
 };
 
@@ -98,17 +99,38 @@ export function CommentList({ taskId }: CommentListProps) {
 
       {!isLoading && !isError && comments && comments.length > 0 && (
         <ul style={{ ...listStyle, listStyle: 'none', margin: 0, padding: 0 }}>
-          {comments.map((c) => (
-            <li key={c.id} style={commentItemStyle}>
-              <div style={commentMetaStyle}>
-                <span style={commentAuthorStyle}>
-                  {c.authorName ?? 'Deleted user'}
-                </span>
-                <span style={commentTimeStyle}>{fmtRelative(c.createdAt)}</span>
-              </div>
-              <p style={commentBodyStyle}>{c.body}</p>
-            </li>
-          ))}
+          {comments.map((c) => {
+            const name = c.authorName ?? 'Deleted user';
+            const { bg, fg } = c.authorId ? getAvatarColors(c.authorId) : { bg: 'var(--color-bg-muted)', fg: 'var(--color-text-subtle)' };
+            const initials = name.trim().charAt(0).toUpperCase() || '?';
+            return (
+              <li key={c.id} style={commentItemStyle}>
+                <div style={commentMetaStyle}>
+                  <div
+                    style={{
+                      width: 24,
+                      height: 24,
+                      borderRadius: '50%',
+                      flexShrink: 0,
+                      backgroundColor: bg,
+                      color: fg,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: 'var(--font-size-xs)',
+                      fontWeight: 'var(--font-weight-semibold)',
+                      userSelect: 'none',
+                    }}
+                  >
+                    {initials}
+                  </div>
+                  <span style={commentAuthorStyle}>{name}</span>
+                  <span style={commentTimeStyle}>{fmtRelative(c.createdAt)}</span>
+                </div>
+                <p style={commentBodyStyle}>{c.body}</p>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

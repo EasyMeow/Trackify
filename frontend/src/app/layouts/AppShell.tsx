@@ -5,63 +5,12 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../../modules/auth/hooks/useAuth';
 import { WorkspaceSwitcher } from '../../modules/workspace/components/WorkspaceSwitcher';
 import { ToastViewport } from '../../shared/components/ToastViewport';
+import { AvatarCircle } from '../../shared/components/AvatarCircle';
 import { addErrorToast } from '../../shared/state/toastStore';
 import { useAvatarStore } from '../../shared/state/avatarStore';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api';
-
 const SIDEBAR_COLLAPSED_WIDTH = 52;
 const SIDEBAR_EXPANDED_WIDTH = 240;
-
-function AvatarCircle({
-  userId,
-  displayName,
-  version,
-  size = 32,
-}: {
-  userId: string;
-  displayName: string;
-  version: number;
-  size?: number;
-}) {
-  const [imgError, setImgError] = useState(false);
-  useEffect(() => { setImgError(false); }, [version]);
-  const avatarSrc = `${API_BASE}/users/${userId}/avatar?v=${version}`;
-  const letter = displayName.trim().charAt(0).toUpperCase() || '?';
-
-  const circleStyle: React.CSSProperties = {
-    width: size,
-    height: size,
-    borderRadius: '50%',
-    flexShrink: 0,
-    userSelect: 'none',
-    overflow: 'hidden',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'var(--color-accent-soft)',
-    color: 'var(--color-accent)',
-    fontSize: size <= 32 ? 'var(--font-size-sm)' : 'var(--font-size-lg)',
-    fontWeight: 'var(--font-weight-semibold)',
-  };
-
-  if (!imgError) {
-    return (
-      <div style={circleStyle}>
-        <img
-          src={avatarSrc}
-          alt={displayName}
-          width={size}
-          height={size}
-          style={{ width: size, height: size, objectFit: 'cover', display: 'block' }}
-          onError={() => setImgError(true)}
-        />
-      </div>
-    );
-  }
-
-  return <div style={circleStyle}>{letter}</div>;
-}
 
 function AvatarMenu({ collapsed }: { collapsed: boolean }) {
   const { user, signOut } = useAuth();
