@@ -18,4 +18,8 @@ public interface WorkspaceMemberRepository extends JpaRepository<WorkspaceMember
 
     boolean existsByWorkspaceIdAndUserIdAndRole(UUID workspaceId, UUID userId,
             com.trackify.workspace.domain.WorkspaceRole role);
+
+    long countByUserIdAndRole(UUID userId, com.trackify.workspace.domain.WorkspaceRole role);
+
+    void deleteByWorkspaceId(UUID workspaceId);
 }

@@ -18,6 +18,7 @@ import com.trackify.config.JacksonConfig;
 import com.trackify.config.SecurityConfig;
 import com.trackify.config.WebConfig;
 import com.trackify.workspace.application.WorkspaceCreateService;
+import com.trackify.workspace.application.WorkspaceDeleteService;
 import com.trackify.workspace.application.WorkspaceQueryService;
 import com.trackify.workspace.application.WorkspaceRenameService;
 import com.trackify.workspace.dto.CreateWorkspaceRequest;
@@ -71,6 +72,9 @@ class WorkspaceCreateControllerTest {
 
     @MockitoBean
     private WorkspaceRenameService workspaceRenameService;
+
+    @MockitoBean
+    private WorkspaceDeleteService workspaceDeleteService;
 
     // -------------------------------------------------------------------------
     // Happy path: authenticated user creates a workspace and gets 201

@@ -4012,3 +4012,21 @@ What was tested:
 Follow-up risk / notes:
 - No slug update on rename (slug stays as originally generated). This is intentional — slugs are stable identifiers.
 - Next pending task: TASK-110 (DELETE /api/workspaces/{id} — cascade delete + last-workspace guard).
+
+## 2026-04-29 — TASK-110: DELETE /api/workspaces/{id} (cascade delete + last-workspace guard)
+
+What changed:
+- `WorkspaceMemberRepository`: added `countByUserIdAndRole` (for last-workspace guard) and `deleteByWorkspaceId` (for cascade cleanup).
+- `WorkspaceDeleteService.java` (new): `@Transactional delete(workspaceId, userId)` — loads workspace (404 if missing), verifies OWNER role (403 if not), checks user has ≥2 owned workspaces (409 if only 1 remains), then cascades: for each project → delete task dependencies, comments, tasks, board columns, project members; then delete all projects; delete workspace members; delete workspace.
+- `WorkspaceController`: added `WorkspaceDeleteService` constructor arg + `@DeleteMapping("/{id}")` returning 204 No Content.
+- `WorkspaceDeleteControllerTest.java` (new): 5 WebMvcTest cases — owner delete → 204; last-workspace → 409 CONFLICT; non-owner → 403; unknown workspace → 404; unauthenticated → 401.
+- Updated `WorkspaceControllerTest`, `WorkspaceCreateControllerTest`, `WorkspaceRenameControllerTest`: added `@MockitoBean WorkspaceDeleteService` (required by new controller constructor).
+
+What was tested:
+- `./mvnw -q compile test-compile` → success.
+- `./mvnw test` → 173 tests, 0 failures, BUILD SUCCESS.
+
+Follow-up risk / notes:
+- Cascade deletes are explicit (no JPA cascade). Order matters: dependencies → comments → tasks → columns → project members → projects → workspace members → workspace.
+- `countByUserIdAndRole(userId, OWNER)` counts all workspaces where the user is OWNER — prevents deleting the last owned workspace even if the user is a member of others' workspaces.
+- Next pending task: TASK-111 (Replace workspace dropdown with vertical sidebar list — frontend).

@@ -2,6 +2,7 @@ package com.trackify.workspace.controller;
 
 import com.trackify.auth.application.LocalUserPrincipal;
 import com.trackify.workspace.application.WorkspaceCreateService;
+import com.trackify.workspace.application.WorkspaceDeleteService;
 import com.trackify.workspace.application.WorkspaceQueryService;
 import com.trackify.workspace.application.WorkspaceRenameService;
 import com.trackify.workspace.dto.CreateWorkspaceRequest;
@@ -10,14 +11,17 @@ import com.trackify.workspace.dto.WorkspaceResponse;
 
 import jakarta.validation.Valid;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
@@ -49,13 +53,16 @@ public class WorkspaceController {
     private final WorkspaceQueryService workspaceQueryService;
     private final WorkspaceCreateService workspaceCreateService;
     private final WorkspaceRenameService workspaceRenameService;
+    private final WorkspaceDeleteService workspaceDeleteService;
 
     public WorkspaceController(WorkspaceQueryService workspaceQueryService,
                                WorkspaceCreateService workspaceCreateService,
-                               WorkspaceRenameService workspaceRenameService) {
+                               WorkspaceRenameService workspaceRenameService,
+                               WorkspaceDeleteService workspaceDeleteService) {
         this.workspaceQueryService = workspaceQueryService;
         this.workspaceCreateService = workspaceCreateService;
         this.workspaceRenameService = workspaceRenameService;
+        this.workspaceDeleteService = workspaceDeleteService;
     }
 
     @GetMapping
@@ -82,5 +89,13 @@ public class WorkspaceController {
             @Valid @RequestBody RenameWorkspaceRequest request,
             @AuthenticationPrincipal LocalUserPrincipal principal) {
         return workspaceRenameService.rename(id, principal.userId(), request);
+    }
+
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteWorkspace(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal LocalUserPrincipal principal) {
+        workspaceDeleteService.delete(id, principal.userId());
     }
 }
