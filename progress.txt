@@ -4230,3 +4230,21 @@ Design choices:
 
 Follow-up risk:
 - TASK-119 (tab bar slide animation) is now unblocked.
+
+---
+## TASK-119 — Sliding tab indicator animation (2026-04-29)
+
+### What changed
+- `frontend/src/modules/project/components/ProjectNav.tsx` rewritten to use a CSS-animated sliding pill indicator.
+- A separate `<div>` is positioned absolutely inside the tab container using `getBoundingClientRect()` relative to the container.
+- On active tab change, `useLayoutEffect` re-measures the target tab element and updates the indicator rect synchronously (before paint) to avoid a visible jump.
+- CSS transition `left 200ms ease, width 200ms ease` drives the sliding effect.
+- `prefers-reduced-motion` is detected at module load via `window.matchMedia`; when true the transition property is omitted so the indicator snaps instantly.
+- Tab text colour still switches via NavLink's `isActive` with a fast CSS `color` transition.
+
+### What was tested
+- `npm run build` succeeds (459 modules, no TypeScript errors).
+- `npm run lint` — no errors in ProjectNav.tsx (5 pre-existing errors in other files unrelated to this task).
+
+### Follow-up risk
+- None — this was the last pending task. All 119 tasks are now done.

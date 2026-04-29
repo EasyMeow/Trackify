@@ -1,4 +1,9 @@
-import { Link, NavLink } from 'react-router-dom';
+import React, { useRef, useState, useLayoutEffect } from 'react';
+import { Link, NavLink, useLocation } from 'react-router-dom';
+
+const prefersReducedMotion =
+  typeof window !== 'undefined' &&
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const wrapperStyle: React.CSSProperties = {
   display: 'flex',
@@ -13,32 +18,24 @@ const backLinkStyle: React.CSSProperties = {
   textDecoration: 'none',
 };
 
-const tabsStyle: React.CSSProperties = {
+const tabsContainerStyle: React.CSSProperties = {
   display: 'flex',
   gap: 'var(--space-1)',
   padding: 'var(--space-1)',
   backgroundColor: 'var(--color-bg-muted)',
   borderRadius: 'var(--radius-md)',
+  position: 'relative',
 };
 
-const baseTabStyle: React.CSSProperties = {
+const tabLinkBase: React.CSSProperties = {
   padding: 'var(--space-1) var(--space-3)',
   fontSize: 'var(--font-size-sm)',
   fontWeight: 'var(--font-weight-medium)',
   borderRadius: 'var(--radius-sm)',
   textDecoration: 'none',
-  transition: 'background-color var(--transition-fast), color var(--transition-fast)',
-};
-
-const activeTabStyle: React.CSSProperties = {
-  ...baseTabStyle,
-  backgroundColor: 'var(--color-accent)',
-  color: 'var(--color-text-on-accent)',
-};
-
-const inactiveTabStyle: React.CSSProperties = {
-  ...baseTabStyle,
-  color: 'var(--color-text-muted)',
+  position: 'relative',
+  zIndex: 1,
+  transition: 'color var(--transition-fast)',
 };
 
 const tabs = [
@@ -47,20 +44,79 @@ const tabs = [
   { to: 'settings', label: 'Settings' },
 ];
 
+interface IndicatorRect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
 export function ProjectNav({ projectId }: { projectId: string | undefined }) {
+  const location = useLocation();
+  const tabRefs = useRef<(HTMLAnchorElement | null)[]>([]);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [indicator, setIndicator] = useState<IndicatorRect | null>(null);
+  const initialized = useRef(false);
+
+  const activeIndex = tabs.findIndex((tab) =>
+    location.pathname.includes(`/${tab.to}`)
+  );
+
+  useLayoutEffect(() => {
+    const el = tabRefs.current[activeIndex];
+    const container = containerRef.current;
+    if (!el || !container || activeIndex === -1) return;
+
+    const cRect = container.getBoundingClientRect();
+    const eRect = el.getBoundingClientRect();
+
+    setIndicator({
+      left: eRect.left - cRect.left,
+      top: eRect.top - cRect.top,
+      width: eRect.width,
+      height: eRect.height,
+    });
+    initialized.current = true;
+  }, [activeIndex]);
+
   if (!projectId) return null;
+
+  const indicatorStyle: React.CSSProperties = indicator
+    ? {
+        position: 'absolute',
+        backgroundColor: 'var(--color-accent)',
+        borderRadius: 'var(--radius-sm)',
+        pointerEvents: 'none',
+        left: indicator.left,
+        top: indicator.top,
+        width: indicator.width,
+        height: indicator.height,
+        transition: prefersReducedMotion
+          ? undefined
+          : 'left 200ms ease, width 200ms ease, top 200ms ease, height 200ms ease',
+      }
+    : { display: 'none' };
 
   return (
     <nav style={wrapperStyle} aria-label="Project navigation">
       <Link to="/" style={backLinkStyle}>
         ← Dashboard
       </Link>
-      <div style={tabsStyle} role="tablist">
-        {tabs.map((tab) => (
+      <div ref={containerRef} style={tabsContainerStyle} role="tablist">
+        <div style={indicatorStyle} aria-hidden="true" />
+        {tabs.map((tab, i) => (
           <NavLink
             key={tab.to}
             to={`/projects/${projectId}/${tab.to}`}
-            style={({ isActive }) => (isActive ? activeTabStyle : inactiveTabStyle)}
+            ref={(el) => {
+              tabRefs.current[i] = el;
+            }}
+            style={({ isActive }) => ({
+              ...tabLinkBase,
+              color: isActive
+                ? 'var(--color-text-on-accent)'
+                : 'var(--color-text-muted)',
+            })}
           >
             {tab.label}
           </NavLink>
