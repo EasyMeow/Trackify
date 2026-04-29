@@ -1,19 +1,92 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import type { ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../../modules/auth/hooks/useAuth';
 import { WorkspaceSwitcher } from '../../modules/workspace/components/WorkspaceSwitcher';
 import { ToastViewport } from '../../shared/components/ToastViewport';
 import { addErrorToast } from '../../shared/state/toastStore';
 
-function SignOutControl() {
-  const { user, signOut } = useAuth();
-  const [pending, setPending] = useState(false);
+const SIDEBAR_COLLAPSED_WIDTH = 52;
+const SIDEBAR_EXPANDED_WIDTH = 240;
 
-  const handleClick = async () => {
-    if (pending) {
+function AvatarCircle({ displayName }: { displayName: string }) {
+  const letter = displayName.trim().charAt(0).toUpperCase() || '?';
+  return (
+    <div
+      style={{
+        width: 32,
+        height: 32,
+        borderRadius: '50%',
+        backgroundColor: 'var(--color-accent-soft)',
+        color: 'var(--color-accent)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: 'var(--font-size-sm)',
+        fontWeight: 'var(--font-weight-semibold)',
+        flexShrink: 0,
+        userSelect: 'none',
+      }}
+    >
+      {letter}
+    </div>
+  );
+}
+
+function AvatarMenu({ collapsed }: { collapsed: boolean }) {
+  const { user, signOut } = useAuth();
+  const [open, setOpen] = useState(false);
+  const [pending, setPending] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuStyle, setMenuStyle] = useState<React.CSSProperties>({});
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClickOutside(e: MouseEvent) {
+      const target = e.target as Node;
+      const insideMenu = menuRef.current?.contains(target) ?? false;
+      const insideButton = buttonRef.current?.contains(target) ?? false;
+      if (!insideMenu && !insideButton) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [open]);
+
+  function toggleMenu() {
+    if (open) {
+      setOpen(false);
       return;
     }
+    if (buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      // Position menu above button; in collapsed mode open to the right
+      if (collapsed) {
+        setMenuStyle({
+          position: 'fixed',
+          top: rect.top,
+          left: rect.right + 6,
+          zIndex: 70,
+        });
+      } else {
+        setMenuStyle({
+          position: 'fixed',
+          bottom: window.innerHeight - rect.top + 4,
+          left: rect.left,
+          zIndex: 70,
+        });
+      }
+    }
+    setOpen(true);
+  }
+
+  async function handleSignOut() {
+    if (pending) return;
     setPending(true);
+    setOpen(false);
     try {
       await signOut();
     } catch (error) {
@@ -22,62 +95,145 @@ function SignOutControl() {
       addErrorToast(message);
       setPending(false);
     }
+  }
+
+  if (!user) return null;
+
+  const menuItemStyle: React.CSSProperties = {
+    display: 'block',
+    width: '100%',
+    textAlign: 'left',
+    padding: 'var(--space-2) var(--space-3)',
+    fontSize: 'var(--font-size-sm)',
+    color: 'var(--color-text)',
+    backgroundColor: 'transparent',
+    border: 'none',
+    borderRadius: 'var(--radius-md)',
+    cursor: 'pointer',
+    textDecoration: 'none',
   };
 
   return (
-    <div
-      style={{
-        marginTop: 'auto',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 'var(--space-2)',
-      }}
-    >
-      {user && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-          <span
-            style={{
-              fontSize: 'var(--font-size-sm)',
-              fontWeight: 'var(--font-weight-medium)',
-              color: 'var(--color-text)',
-            }}
-          >
-            {user.displayName}
-          </span>
-          <span
-            style={{
-              fontSize: 'var(--font-size-xs)',
-              color: 'var(--color-text-subtle)',
-            }}
-          >
-            {user.login}
-          </span>
-        </div>
-      )}
+    <div style={{ marginTop: 'auto' }} title={collapsed ? user.displayName : undefined}>
       <button
+        ref={buttonRef}
         type="button"
-        onClick={handleClick}
-        disabled={pending}
+        onClick={toggleMenu}
+        aria-label="User menu"
         style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 'var(--space-2)',
           width: '100%',
-          padding: 'var(--space-2) var(--space-3)',
-          fontSize: 'var(--font-size-sm)',
-          fontWeight: 'var(--font-weight-medium)',
-          color: 'var(--color-text)',
-          backgroundColor: 'var(--color-surface)',
-          border: '1px solid var(--color-border)',
+          padding: collapsed ? 'var(--space-1) 0' : 'var(--space-2) var(--space-1)',
+          backgroundColor: open ? 'var(--color-surface-hover)' : 'transparent',
+          border: 'none',
           borderRadius: 'var(--radius-md)',
-          cursor: pending ? 'wait' : 'pointer',
-          opacity: pending ? 0.6 : 1,
+          cursor: 'pointer',
+          justifyContent: collapsed ? 'center' : 'flex-start',
+          transition: 'background-color var(--transition-fast)',
         }}
       >
-        {pending ? 'Signing out…' : 'Sign out'}
+        <AvatarCircle displayName={user.displayName} />
+        {!collapsed && (
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '1px',
+              minWidth: 0,
+              overflow: 'hidden',
+            }}
+          >
+            <span
+              style={{
+                fontSize: 'var(--font-size-sm)',
+                fontWeight: 'var(--font-weight-medium)',
+                color: 'var(--color-text)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {user.displayName}
+            </span>
+            <span
+              style={{
+                fontSize: 'var(--font-size-xs)',
+                color: 'var(--color-text-subtle)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {user.login}
+            </span>
+          </div>
+        )}
       </button>
+
+      {open &&
+        createPortal(
+          <div
+            ref={menuRef}
+            style={{
+              ...menuStyle,
+              backgroundColor: 'var(--color-surface)',
+              border: '1px solid var(--color-border)',
+              borderRadius: 'var(--radius-lg)',
+              boxShadow: 'var(--shadow-lg)',
+              minWidth: 160,
+              overflow: 'hidden',
+              padding: 'var(--space-1)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '2px',
+            }}
+          >
+            <Link
+              to="/profile"
+              onClick={() => setOpen(false)}
+              style={menuItemStyle}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLElement).style.backgroundColor =
+                  'var(--color-surface-hover)';
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent';
+              }}
+            >
+              Profile
+            </Link>
+            <button
+              type="button"
+              disabled={pending}
+              onClick={handleSignOut}
+              style={{
+                ...menuItemStyle,
+                opacity: pending ? 0.6 : 1,
+                cursor: pending ? 'wait' : 'pointer',
+              }}
+              onMouseEnter={(e) => {
+                if (!pending)
+                  (e.currentTarget as HTMLElement).style.backgroundColor =
+                    'var(--color-surface-hover)';
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent';
+              }}
+            >
+              {pending ? 'Signing out…' : 'Sign out'}
+            </button>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
+  const [collapsed, setCollapsed] = useState(false);
+
   return (
     <div
       style={{
@@ -88,45 +244,96 @@ export function AppShell({ children }: { children: ReactNode }) {
     >
       <aside
         style={{
-          width: 'var(--layout-sidebar-width)',
+          width: collapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_EXPANDED_WIDTH,
           flexShrink: 0,
           backgroundColor: 'var(--color-surface)',
           borderRight: '1px solid var(--color-border)',
           display: 'flex',
           flexDirection: 'column',
           gap: 'var(--space-4)',
-          padding: 'var(--space-4)',
+          padding: collapsed ? `var(--space-4) var(--space-2)` : 'var(--space-4)',
+          transition: `width var(--transition-default), padding var(--transition-default)`,
+          overflow: 'hidden',
         }}
       >
+        {/* Header: logo (expanded) + collapse toggle */}
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 'var(--space-2)',
+            justifyContent: collapsed ? 'center' : 'space-between',
+            minHeight: 28,
           }}
         >
-          <img
-            src="/favicon.svg"
-            alt=""
-            aria-hidden="true"
-            width={22}
-            height={22}
-            style={{ display: 'block' }}
-          />
-          <span
+          {!collapsed && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 'var(--space-2)',
+                minWidth: 0,
+                overflow: 'hidden',
+              }}
+            >
+              <img
+                src="/favicon.svg"
+                alt=""
+                aria-hidden="true"
+                width={22}
+                height={22}
+                style={{ display: 'block', flexShrink: 0 }}
+              />
+              <span
+                style={{
+                  fontSize: 'var(--font-size-lg)',
+                  fontWeight: 'var(--font-weight-semibold)',
+                  color: 'var(--color-accent)',
+                  letterSpacing: '-0.3px',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                }}
+              >
+                Trackify
+              </span>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => setCollapsed((c) => !c)}
+            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             style={{
-              fontSize: 'var(--font-size-lg)',
-              fontWeight: 'var(--font-weight-semibold)',
-              color: 'var(--color-accent)',
-              letterSpacing: '-0.3px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 28,
+              height: 28,
+              padding: 0,
+              backgroundColor: 'transparent',
+              border: '1px solid var(--color-border)',
+              borderRadius: 'var(--radius-md)',
+              cursor: 'pointer',
+              color: 'var(--color-text-subtle)',
+              fontSize: '13px',
+              flexShrink: 0,
+              transition: 'background-color var(--transition-fast)',
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLElement).style.backgroundColor =
+                'var(--color-surface-hover)';
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent';
             }}
           >
-            Trackify
-          </span>
+            {collapsed ? '›' : '‹'}
+          </button>
         </div>
-        <WorkspaceSwitcher />
-        <SignOutControl />
+
+        <WorkspaceSwitcher collapsed={collapsed} />
+        <AvatarMenu collapsed={collapsed} />
       </aside>
+
       <main
         style={{
           flex: 1,

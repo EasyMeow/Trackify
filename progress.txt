@@ -4072,3 +4072,34 @@ What was tested:
 Follow-up risk / notes:
 - The hover-reveal icon pattern (opacity 0 → 1) relies on onMouseEnter/onMouseLeave; touch devices won't see the icons. Acceptable for MVP desktop scope.
 - Next pending task: TASK-113 (collapsible sidebar with icon-only mode).
+
+## 2026-04-29 — TASK-113: Collapsible sidebar with icon-only mode and avatar menu
+
+What changed:
+- `AppShell.tsx` (full rewrite):
+  - Added `collapsed` boolean state (default: false) controlling sidebar width (52px collapsed / 240px expanded) with CSS transition.
+  - Toggle button (‹ / ›) at top of sidebar; in expanded mode shows logo + toggle side by side; in collapsed mode shows only the toggle centered.
+  - Replaced `SignOutControl` with new `AvatarMenu` component at bottom of sidebar.
+  - `AvatarMenu`: renders user's initial letter in a circle button; clicking opens a `position: fixed` dropdown (rendered via `createPortal` to escape the `overflow: hidden` sidebar) with "Profile" link and "Sign out" button. Menu positions above button in expanded mode; to the right in collapsed mode. Click-outside closes the menu via mousedown listener.
+  - `AvatarCircle`: shared helper rendering a 32px circle with the first letter of `displayName`.
+  - `WorkspaceSwitcher` receives new `collapsed` prop.
+
+- `WorkspaceSwitcher.tsx`:
+  - Accepts optional `collapsed?: boolean` prop (default false).
+  - In collapsed mode: renders only `WorkspaceIconButton` circles (32px, first letter, accent bg for active), each with native `title` attribute for tooltip; no edit/create/delete controls.
+  - In expanded mode: unchanged full management UI.
+  - `selectedId` computation moved before the collapsed early-return so it's available in both render paths.
+  - Expanded wrapper div now uses `flex: 1; minHeight: 0` to stay scrollable in the sidebar column.
+
+- `ProfilePage.tsx` (new): minimal placeholder page rendered at `/profile`.
+- `routes.tsx`: added `/profile` route inside the authenticated `AppShellRoute`.
+
+What was tested:
+- `npm run build` → 454 modules, 0 TypeScript errors, BUILD SUCCESS.
+
+Follow-up risk / notes:
+- Sidebar collapse state is local (not persisted). Could persist in localStorage later if needed.
+- Native `title` tooltip has a ~500ms browser delay before appearing — acceptable for MVP; a custom tooltip component could improve this.
+- The `position: fixed` dropdown for AvatarMenu recalculates position on open; doesn't reposition on window resize while open (edge case).
+- ProfilePage is a placeholder; TASK-117 builds the real profile page.
+- Next pending task: TASK-114 (extend users table with avatar BLOB + content_type column — backend).

@@ -371,19 +371,135 @@ function CreateWorkspaceForm({ onDone }: CreateFormProps) {
   );
 }
 
+// ─── collapsed workspace icon ─────────────────────────────────────────────────
+
+function WorkspaceIconButton({
+  workspace,
+  active,
+  onSelect,
+}: {
+  workspace: Workspace;
+  active: boolean;
+  onSelect: (id: string) => void;
+}) {
+  const letter = workspace.name.trim().charAt(0).toUpperCase() || '?';
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(workspace.id)}
+      title={workspace.name}
+      aria-label={workspace.name}
+      style={{
+        width: 32,
+        height: 32,
+        borderRadius: '50%',
+        border: 'none',
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: 'var(--font-size-sm)',
+        fontWeight: 'var(--font-weight-semibold)',
+        backgroundColor: active ? 'var(--color-accent)' : 'var(--color-accent-soft)',
+        color: active ? 'var(--color-text-on-accent)' : 'var(--color-accent)',
+        transition: 'background-color var(--transition-fast)',
+        flexShrink: 0,
+      }}
+    >
+      {letter}
+    </button>
+  );
+}
+
 // ─── main component ───────────────────────────────────────────────────────────
 
-export function WorkspaceSwitcher() {
+interface WorkspaceSwitcherProps {
+  collapsed?: boolean;
+}
+
+export function WorkspaceSwitcher({ collapsed = false }: WorkspaceSwitcherProps) {
   const { data: workspaces, isLoading } = useWorkspaces();
   const [searchParams, setSearchParams] = useSearchParams();
   const [showCreate, setShowCreate] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Workspace | null>(null);
   const deleteWorkspace = useDeleteWorkspace();
 
+  const urlValue = searchParams.get('workspace');
+  const selectedId =
+    workspaces && workspaces.some((w) => w.id === urlValue)
+      ? (urlValue as string)
+      : (workspaces?.[0]?.id ?? null);
+
+  function handleSelect(id: string) {
+    const next = new URLSearchParams(searchParams);
+    next.set('workspace', id);
+    setSearchParams(next);
+  }
+
+  function handleDeleteConfirm() {
+    if (!deleteTarget) return;
+    const targetId = deleteTarget.id;
+    deleteWorkspace.mutate(targetId, {
+      onSuccess: () => {
+        setDeleteTarget(null);
+        if (selectedId === targetId) {
+          const remaining = (workspaces ?? []).filter((w) => w.id !== targetId);
+          const next = new URLSearchParams(searchParams);
+          if (remaining.length > 0) {
+            next.set('workspace', remaining[0].id);
+          } else {
+            next.delete('workspace');
+          }
+          setSearchParams(next);
+        }
+      },
+    });
+  }
+
   if (isLoading) {
+    if (collapsed) {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+          <div
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: '50%',
+              backgroundColor: 'var(--color-surface-alt)',
+            }}
+          />
+        </div>
+      );
+    }
     return <p style={placeholderStyle}>Loading workspaces…</p>;
   }
 
+  // Collapsed mode: show only workspace initial circles with tooltips
+  if (collapsed) {
+    return (
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '4px',
+          flex: 1,
+          overflowY: 'auto',
+        }}
+      >
+        {workspaces?.map((workspace) => (
+          <WorkspaceIconButton
+            key={workspace.id}
+            workspace={workspace}
+            active={workspace.id === selectedId}
+            onSelect={handleSelect}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  // Expanded mode: full workspace management UI
   if (!workspaces || workspaces.length === 0) {
     return (
       <div>
@@ -409,40 +525,8 @@ export function WorkspaceSwitcher() {
     );
   }
 
-  const urlValue = searchParams.get('workspace');
-  const selectedId = workspaces.some((w) => w.id === urlValue)
-    ? (urlValue as string)
-    : workspaces[0].id;
-
-  function handleSelect(id: string) {
-    const next = new URLSearchParams(searchParams);
-    next.set('workspace', id);
-    setSearchParams(next);
-  }
-
-  function handleDeleteConfirm() {
-    if (!deleteTarget) return;
-    const targetId = deleteTarget.id;
-    deleteWorkspace.mutate(targetId, {
-      onSuccess: () => {
-        setDeleteTarget(null);
-        // If we just deleted the selected workspace, switch to first remaining one
-        if (selectedId === targetId) {
-          const remaining = (workspaces ?? []).filter((w) => w.id !== targetId);
-          const next = new URLSearchParams(searchParams);
-          if (remaining.length > 0) {
-            next.set('workspace', remaining[0].id);
-          } else {
-            next.delete('workspace');
-          }
-          setSearchParams(next);
-        }
-      },
-    });
-  }
-
   return (
-    <div>
+    <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       <p style={captionStyle}>Workspaces</p>
       <ul style={listStyle}>
         {workspaces.map((workspace) => (

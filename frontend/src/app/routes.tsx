@@ -8,6 +8,7 @@ import ProjectSettingsPage from '../pages/ProjectSettingsPage';
 import ProjectTimelinePage from '../pages/ProjectTimelinePage';
 import SignInPage from '../pages/SignInPage';
 import SignUpPage from '../pages/SignUpPage';
+import ProfilePage from '../pages/ProfilePage';
 
 function AuthLayoutRoute() {
   return (
@@ -44,6 +45,7 @@ export const router = createBrowserRouter([
       { path: '/projects/:projectId/board', element: <ProjectBoardPage /> },
       { path: '/projects/:projectId/timeline', element: <ProjectTimelinePage /> },
       { path: '/projects/:projectId/settings', element: <ProjectSettingsPage /> },
+      { path: '/profile', element: <ProfilePage /> },
     ],
   },
 ]);
