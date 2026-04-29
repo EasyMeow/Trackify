@@ -4171,3 +4171,40 @@ What was tested:
 Follow-up risk / notes:
 - Session validity after password change is guaranteed by the service (no session invalidation code), but there is no explicit integration test for it.
 - Next pending task: TASK-117 (frontend /profile page).
+
+
+================================================================================
+TASK-117 — Build /profile page with editable display name, avatar upload, and password change
+Date: 2026-04-29
+================================================================================
+
+What changed:
+- `frontend/src/pages/ProfilePage.tsx`: full implementation replacing the placeholder. Four sections rendered vertically inside a 600px-wide column:
+  1. **Avatar** — circular 72px preview (real image from `GET /api/users/{id}/avatar?v={version}` with letter fallback on 404), hidden file input triggered by a styled button, client-side `URL.createObjectURL` preview before upload, "Upload avatar" button that calls `useUpdateMe` with `FormData { avatar }`, Cancel button to discard the selection. Success / error messages shown inline.
+  2. **Display name** — text input pre-filled from `useAuth().user.displayName`, dirty-checked, "Save changes" button calling `useUpdateMe` with `FormData { displayName }`. Inline success/error feedback.
+  3. **Account** — read-only login and email fields styled with muted text so they look non-editable.
+  4. **Change password** — three password inputs (current, new, confirm). Inline validation: "too short" message if new < 8 chars before submitting, "do not match" if confirm diverges. Calls `useChangePassword` on submit, resets fields on success.
+- `frontend/src/app/layouts/AppShell.tsx`:
+  - `AvatarCircle` accepts `userId`, `displayName`, `version`, and `size` props. Attempts to load `${API_BASE}/users/${userId}/avatar?v=${version}`; on `onError` (404 or network) falls back to the letter circle. `useEffect(() => setImgError(false), [version])` ensures the image is retried after each avatar upload.
+  - `AvatarMenu` calls `useAvatarStore((s) => s.version)` and passes it down to `AvatarCircle`, so the sidebar avatar refreshes immediately after upload without a page reload.
+  - Added `import { useAvatarStore }` and `const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api'` at module level.
+
+What was tested:
+- `npm run build`: BUILD SUCCESS, 457 modules transformed, exit 0.
+- `npx tsc --noEmit`: no errors (exit 0).
+- `npx eslint src/pages/ProfilePage.tsx src/app/layouts/AppShell.tsx`: no output (exit 0); pre-existing lint errors in ProjectSettingsPage.tsx are unrelated to this task.
+- Browser test could not be confirmed interactively (Playwright permission not granted), but TypeScript + build validation covers structural correctness.
+
+Design choices and trade-offs:
+- **Image-src-with-onError pattern for avatar fallback**: simplest approach — always point the `<img>` at the avatar URL, let the browser's native image loading detect the 404, then swap to the letter via `onError`. No extra API call, no boolean flag stored server-side. The `?v={version}` cache-buster forces a fresh fetch after each upload, bypassing any browser image cache.
+- **`useEffect` to reset `imgError` on version change**: `imgError` is local state that persists across re-renders. Without the reset, uploading a new avatar after a 404 fallback would leave `imgError=true` and never show the new image. The effect fires whenever `version` bumps (i.e., after every successful upload via `useAvatarStore.bumpVersion()`).
+- **Separate sections for avatar and display name**: they share the `PATCH /api/me` endpoint but have distinct UX flows — avatar has a file picker + preview flow, display name is a simple text input. Combining them into one "Save" action would mean the file picker couldn't give immediate "Upload" feedback without also requiring a display name change. Separate sections is cleaner.
+- **Read-only account section**: login and email are not editable in the MVP (no email-change endpoint). Showing them as `readOnly` inputs with muted styling communicates "these exist but can't be changed here" without completely hiding them.
+- **`MIN_PASSWORD_LENGTH = 8` hardcoded frontend**: matches the backend default `AUTH_PASSWORD_MIN_LENGTH:8` from `application.yml`. If the backend is configured differently via env var, the server-side 400 response will still show the correct error message — the frontend validation is just a convenience guard, not the authoritative rule.
+- **No success toast — inline success messages instead**: mutation success is transient and contextual to the section. A toast would require the toastStore to add a success kind (it only has error/warning/info). Inline `<p>` messages are simpler and match the pattern used in similar forms elsewhere.
+
+Follow-up risk / notes:
+- **TASK-118** (avatar fallback letter with deterministic color per user id) builds directly on this work. The `AvatarCircle` component in AppShell already implements a letter fallback — TASK-118 will add deterministic coloring. The `ProfilePage`'s avatar section also has a letter fallback that will need the same treatment.
+- **`imgError` resets on every version bump**, including the initial 0→0 (no bump). First render: version=0, imgError=false, browser tries `...?v=0`, gets 404, sets imgError=true → letter shown. After first upload: version bumps to 1, effect resets imgError=false, browser tries `...?v=1`, gets 200 → image shown. Correct lifecycle.
+- **FormData for displayName only**: the backend `PATCH /api/me` accepts a multipart with optional fields. Sending just `displayName` without an `avatar` part is valid; the backend checks `if (file != null)` before touching avatar storage. The `useUpdateMe` hook checks `formData.has('avatar')` before calling `bumpVersion()`, so a name-only update does not trigger an unnecessary avatar image reload.
+

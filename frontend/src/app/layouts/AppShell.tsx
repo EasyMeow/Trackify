@@ -6,36 +6,66 @@ import { useAuth } from '../../modules/auth/hooks/useAuth';
 import { WorkspaceSwitcher } from '../../modules/workspace/components/WorkspaceSwitcher';
 import { ToastViewport } from '../../shared/components/ToastViewport';
 import { addErrorToast } from '../../shared/state/toastStore';
+import { useAvatarStore } from '../../shared/state/avatarStore';
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api';
 
 const SIDEBAR_COLLAPSED_WIDTH = 52;
 const SIDEBAR_EXPANDED_WIDTH = 240;
 
-function AvatarCircle({ displayName }: { displayName: string }) {
+function AvatarCircle({
+  userId,
+  displayName,
+  version,
+  size = 32,
+}: {
+  userId: string;
+  displayName: string;
+  version: number;
+  size?: number;
+}) {
+  const [imgError, setImgError] = useState(false);
+  useEffect(() => { setImgError(false); }, [version]);
+  const avatarSrc = `${API_BASE}/users/${userId}/avatar?v=${version}`;
   const letter = displayName.trim().charAt(0).toUpperCase() || '?';
-  return (
-    <div
-      style={{
-        width: 32,
-        height: 32,
-        borderRadius: '50%',
-        backgroundColor: 'var(--color-accent-soft)',
-        color: 'var(--color-accent)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: 'var(--font-size-sm)',
-        fontWeight: 'var(--font-weight-semibold)',
-        flexShrink: 0,
-        userSelect: 'none',
-      }}
-    >
-      {letter}
-    </div>
-  );
+
+  const circleStyle: React.CSSProperties = {
+    width: size,
+    height: size,
+    borderRadius: '50%',
+    flexShrink: 0,
+    userSelect: 'none',
+    overflow: 'hidden',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'var(--color-accent-soft)',
+    color: 'var(--color-accent)',
+    fontSize: size <= 32 ? 'var(--font-size-sm)' : 'var(--font-size-lg)',
+    fontWeight: 'var(--font-weight-semibold)',
+  };
+
+  if (!imgError) {
+    return (
+      <div style={circleStyle}>
+        <img
+          src={avatarSrc}
+          alt={displayName}
+          width={size}
+          height={size}
+          style={{ width: size, height: size, objectFit: 'cover', display: 'block' }}
+          onError={() => setImgError(true)}
+        />
+      </div>
+    );
+  }
+
+  return <div style={circleStyle}>{letter}</div>;
 }
 
 function AvatarMenu({ collapsed }: { collapsed: boolean }) {
   const { user, signOut } = useAuth();
+  const version = useAvatarStore((s) => s.version);
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -134,7 +164,7 @@ function AvatarMenu({ collapsed }: { collapsed: boolean }) {
           transition: 'background-color var(--transition-fast)',
         }}
       >
-        <AvatarCircle displayName={user.displayName} />
+        <AvatarCircle userId={user.id} displayName={user.displayName} version={version} />
         {!collapsed && (
           <div
             style={{
