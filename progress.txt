@@ -4049,3 +4049,26 @@ What was tested:
 Follow-up risk / notes:
 - No hover styling added (could be a nice touch via CSS :hover — currently uses transparent bg on non-active items).
 - TASK-112 (create/rename/delete workspaces from sidebar) is next; it will extend this list with additional controls.
+
+## 2026-04-29 — TASK-112: workspace create/rename/delete UI in sidebar
+
+What changed:
+- `workspaceApi.ts`: added `create(name)` → POST /workspaces, `update(id, name)` → PATCH /workspaces/{id}, `delete(id)` → DELETE /workspaces/{id}.
+- `useCreateWorkspace.ts`: TanStack Query mutation that appends the new workspace to the ['workspaces'] cache on success; calls addErrorToast on error.
+- `useUpdateWorkspace.ts`: mutation that replaces the updated workspace in cache; calls addErrorToast on error.
+- `useDeleteWorkspace.ts`: mutation that removes the deleted workspace from cache; calls addErrorToast on error.
+- `WorkspaceSwitcher.tsx` (full rewrite): 
+  - Each workspace row shows edit (✎) and delete (✕) icon buttons that appear on hover.
+  - Clicking ✎ replaces the name with an inline input; Enter or blur commits; Escape cancels.
+  - Clicking ✕ opens a typed-name confirmation modal (same UX as project delete in ProjectSettingsPage).
+  - On delete success the user is switched to the first remaining workspace (or workspace param cleared if none).
+  - Backend errors (including 409 last-workspace conflict) surface as toasts via the existing addErrorToast helper.
+  - A "+ New workspace" dashed button at the bottom shows an inline input when clicked; Enter/blur creates and selects the new workspace; Escape cancels.
+
+What was tested:
+- `npm run build` → BUILD SUCCESS, 0 TypeScript errors.
+- All 4 lint errors reported are pre-existing (routes.tsx, TaskDrawer.tsx, ProjectSettingsPage.tsx) — no new lint errors from this change.
+
+Follow-up risk / notes:
+- The hover-reveal icon pattern (opacity 0 → 1) relies on onMouseEnter/onMouseLeave; touch devices won't see the icons. Acceptable for MVP desktop scope.
+- Next pending task: TASK-113 (collapsible sidebar with icon-only mode).
