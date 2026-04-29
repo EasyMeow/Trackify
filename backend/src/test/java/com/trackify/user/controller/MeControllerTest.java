@@ -1,5 +1,8 @@
 package com.trackify.user.controller;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -11,17 +14,21 @@ import com.trackify.config.JacksonConfig;
 import com.trackify.config.SecurityConfig;
 import com.trackify.config.WebConfig;
 import com.trackify.user.application.MeService;
+import com.trackify.user.application.UpdateMeService;
 import com.trackify.user.dto.MeResponse;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpMethod;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 
 import java.util.List;
 import java.util.UUID;
@@ -57,6 +64,9 @@ class MeControllerTest {
     @MockitoBean
     private MeService meService;
 
+    @MockitoBean
+    private UpdateMeService updateMeService;
+
     @Test
     void authenticatedUserReceivesIdentityPayloadWithoutPasswordHash() throws Exception {
         UUID userId = UUID.randomUUID();
@@ -81,6 +91,80 @@ class MeControllerTest {
         // Spring Security's HttpStatusEntryPoint(UNAUTHORIZED) fires before the
         // dispatcher servlet — MeService should never be called.
         mockMvc.perform(get("/api/me"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void patchDisplayNameOnly_returns200WithUpdatedName() throws Exception {
+        UUID userId = UUID.randomUUID();
+        LocalUserPrincipal principal = new LocalUserPrincipal(userId, "alice", "hashed-pw");
+        Authentication auth = new UsernamePasswordAuthenticationToken(principal, null, List.of());
+
+        MeResponse updated = new MeResponse(userId, "alice", "alice@example.com", "NewName");
+        when(updateMeService.update(eq(userId), eq("NewName"), isNull())).thenReturn(updated);
+
+        mockMvc.perform(MockMvcRequestBuilders.multipart(HttpMethod.PATCH, "/api/me")
+                        .param("displayName", "NewName")
+                        .with(authentication(auth)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.displayName").value("NewName"));
+    }
+
+    @Test
+    void patchAvatar_returns200() throws Exception {
+        UUID userId = UUID.randomUUID();
+        LocalUserPrincipal principal = new LocalUserPrincipal(userId, "alice", "hashed-pw");
+        Authentication auth = new UsernamePasswordAuthenticationToken(principal, null, List.of());
+
+        MockMultipartFile avatarFile = new MockMultipartFile(
+                "avatar", "avatar.jpg", "image/jpeg", new byte[100]);
+
+        MeResponse updated = new MeResponse(userId, "alice", "alice@example.com", "Alice");
+        when(updateMeService.update(eq(userId), isNull(), any())).thenReturn(updated);
+
+        mockMvc.perform(MockMvcRequestBuilders.multipart(HttpMethod.PATCH, "/api/me")
+                        .file(avatarFile)
+                        .with(authentication(auth)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void patchDisplayName_blankValue_serviceThrowsIllegalArgument_returns400() throws Exception {
+        UUID userId = UUID.randomUUID();
+        LocalUserPrincipal principal = new LocalUserPrincipal(userId, "alice", "hashed-pw");
+        Authentication auth = new UsernamePasswordAuthenticationToken(principal, null, List.of());
+
+        when(updateMeService.update(eq(userId), eq("  "), isNull()))
+                .thenThrow(new IllegalArgumentException("Display name must not be blank"));
+
+        mockMvc.perform(MockMvcRequestBuilders.multipart(HttpMethod.PATCH, "/api/me")
+                        .param("displayName", "  ")
+                        .with(authentication(auth)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("BAD_REQUEST"));
+    }
+
+    @Test
+    void patchOversizedAvatar_serviceThrowsIllegalArgument_returns400() throws Exception {
+        UUID userId = UUID.randomUUID();
+        LocalUserPrincipal principal = new LocalUserPrincipal(userId, "alice", "hashed-pw");
+        Authentication auth = new UsernamePasswordAuthenticationToken(principal, null, List.of());
+
+        MockMultipartFile bigFile = new MockMultipartFile(
+                "avatar", "big.jpg", "image/jpeg", new byte[1_048_577]);
+        when(updateMeService.update(eq(userId), isNull(), any()))
+                .thenThrow(new IllegalArgumentException("Avatar file must not exceed 1 MB"));
+
+        mockMvc.perform(MockMvcRequestBuilders.multipart(HttpMethod.PATCH, "/api/me")
+                        .file(bigFile)
+                        .with(authentication(auth)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void patchMe_unauthenticated_returns401() throws Exception {
+        mockMvc.perform(MockMvcRequestBuilders.multipart(HttpMethod.PATCH, "/api/me")
+                        .param("displayName", "NewName"))
                 .andExpect(status().isUnauthorized());
     }
 }

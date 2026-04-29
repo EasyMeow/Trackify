@@ -2,12 +2,17 @@ package com.trackify.user.controller;
 
 import com.trackify.auth.application.LocalUserPrincipal;
 import com.trackify.user.application.MeService;
+import com.trackify.user.application.UpdateMeService;
 import com.trackify.user.dto.MeResponse;
 
+import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * Exposes the current signed-in user's identity (TASK-028).
@@ -27,13 +32,23 @@ import org.springframework.web.bind.annotation.RestController;
 public class MeController {
 
     private final MeService meService;
+    private final UpdateMeService updateMeService;
 
-    public MeController(MeService meService) {
+    public MeController(MeService meService, UpdateMeService updateMeService) {
         this.meService = meService;
+        this.updateMeService = updateMeService;
     }
 
     @GetMapping
     public MeResponse me(@AuthenticationPrincipal LocalUserPrincipal principal) {
         return meService.getCurrentUser(principal.userId());
+    }
+
+    @PatchMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public MeResponse updateMe(
+            @AuthenticationPrincipal LocalUserPrincipal principal,
+            @RequestParam(required = false) String displayName,
+            @RequestParam(required = false) MultipartFile avatar) {
+        return updateMeService.update(principal.userId(), displayName, avatar);
     }
 }

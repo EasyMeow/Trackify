@@ -4119,3 +4119,39 @@ What was tested:
 Follow-up risk / notes:
 - `@Basic(fetch = FetchType.LAZY)` on a byte[] field requires Hibernate bytecode instrumentation to be truly lazy. Without it, the field is eagerly loaded at query time. For the MVP this is acceptable — avatar bytes are not included in any DTO yet. TASK-115 adds the endpoints that explicitly load/serve avatar bytes.
 - Next pending task: TASK-115 (PATCH /api/me + GET /api/users/{id}/avatar endpoints).
+
+## 2026-04-29 — TASK-115: PATCH /api/me and GET /api/users/{id}/avatar
+
+What changed:
+- `user/application/UpdateMeService.java` (new): `@Transactional` update method handles optional displayName trim/blank-guard and optional avatar upload with 1 MB size cap + JPEG/PNG/WebP content-type guard; saves via UserRepository; returns MeResponse.
+- `user/controller/MeController.java`: injected UpdateMeService; added `@PatchMapping(consumes=MULTIPART_FORM_DATA_VALUE)` that delegates to UpdateMeService.
+- `user/controller/AvatarController.java` (new): `GET /api/users/{id}/avatar` fetches user from UserRepository, returns bytes with stored Content-Type (defaults to application/octet-stream), 404 when user missing or avatar null/empty.
+- `user/controller/MeControllerTest.java`: added @MockitoBean UpdateMeService; 5 new tests (display-name patch, avatar patch, blank display-name 400, oversized avatar 400, unauthenticated 401).
+- `user/controller/AvatarControllerTest.java` (new): 4 tests (avatar present, no avatar set, user not found, unauthenticated).
+- `user/application/UpdateMeServiceTest.java` (new): 4 unit tests (displayName update, avatar stored, oversized throws, wrong content type throws).
+
+What was tested:
+- `./mvnw compile test-compile` → 0 errors.
+- `./mvnw test` → 186 tests, 0 failures, BUILD SUCCESS.
+
+Follow-up risk / notes:
+- AvatarController uses UserRepository directly (thin read path — no application-layer indirection needed for a simple byte fetch).
+- Next pending task: TASK-116 (POST /api/me/password — password change endpoint).
+
+## 2026-04-29 — TASK-115: PATCH /api/me and GET /api/users/{id}/avatar
+
+What changed:
+- `UpdateMeService.java` (new): `@Transactional update(UUID, String displayName, MultipartFile avatar)` — if displayName non-null updates it (blank → IllegalArgumentException); if avatar non-null validates size ≤ 1 MB (→ 400) and content-type in {image/jpeg, image/png, image/webp} (→ 400), then stores bytes + content type.
+- `MeController.java` (modified): added `UpdateMeService` constructor injection and `@PatchMapping(consumes=MULTIPART_FORM_DATA_VALUE)` method delegating to `UpdateMeService.update`.
+- `AvatarController.java` (new): `GET /api/users/{id}/avatar` — loads user, returns avatar bytes with stored content-type header, or 404 if user/avatar missing.
+- `MeControllerTest.java` (modified): added `@MockitoBean UpdateMeService`; 5 new test cases: displayName-only PATCH → 200, avatar PATCH → 200, blank displayName → 400, oversized avatar (service throws) → 400, unauthenticated → 401.
+- `AvatarControllerTest.java` (new): 4 tests — avatar present → 200 + bytes + content-type, null avatar → 404, user not found → 404, unauthenticated → 401.
+- `UpdateMeServiceTest.java` (new): 4 unit tests validating displayName update, avatar storage, size rejection, and wrong-type rejection.
+
+What was tested:
+- `./mvnw test` → 186 tests, 0 failures, BUILD SUCCESS.
+
+Follow-up risk / notes:
+- `@Basic(fetch = FetchType.LAZY)` on User.avatar behaves as eager without bytecode instrumentation. Acceptable for MVP — avatar bytes load on any user lookup that hits the DB for the avatar endpoint.
+- `AvatarController` accesses `UserRepository` directly (no service layer) — simple enough to justify.
+- Next pending task: TASK-116 (POST /api/me/password — password change endpoint).
