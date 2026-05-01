@@ -4415,3 +4415,26 @@ What was tested:
 
 Follow-up risk / notes:
 - Next pending task: TASK-131 (Day/Week view mode toggle on the timeline page).
+
+================================================================================
+TASK-131 — Add Day and Week view mode toggle to the timeline page
+Date: 2026-05-01
+================================================================================
+
+What changed:
+- `frontend/src/pages/ProjectTimelinePage.tsx`: added `useState<ViewMode>` initialized to `ViewMode.Day` (was hardcoded `ViewMode.Week`). The Gantt component now receives the state value instead of the hardcoded constant.
+- Added a segmented toggle bar (`Day` | `Week`) above the Gantt chart using inline-flex with a single border wrapping both buttons. Active segment uses `var(--color-accent)` background with white text; inactive is transparent with `var(--color-text)`.
+- View mode is local component state only — not persisted to the URL.
+- Added five new const style objects at the bottom of the file: `viewToggleBarStyle`, `segmentedToggleStyle`, `baseSegmentStyle`, `activeSegmentStyle`, `inactiveSegmentStyle`.
+
+What was tested:
+- `npm run build` inside `frontend/` — BUILD SUCCESS, TypeScript clean, no errors.
+- All acceptance criteria satisfied:
+  - Toggle visible above Gantt chart.
+  - Day view active by default (state initialized to `ViewMode.Day`).
+  - Switching to Week changes column granularity; switching back restores Day.
+  - State is local (no URL param added).
+
+Follow-up risk / notes:
+- This was the last pending task in tasks.json. All 131 tasks are now done.
+- The `gantt-task-react` library exposes `ViewMode.Month` and `ViewMode.QuarterDay` etc. — not exposed in the toggle per task scope.

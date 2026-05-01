@@ -1,5 +1,5 @@
 import 'gantt-task-react/dist/index.css';
-import React, { createContext, useContext, useMemo } from 'react';
+import React, { createContext, useContext, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Gantt, ViewMode } from 'gantt-task-react';
 import type { Task as GanttTask } from 'gantt-task-react';
@@ -104,6 +104,7 @@ export default function ProjectTimelinePage() {
   const { projectId } = useParams<{ projectId: string }>();
   const { data, isLoading, error } = useProjectTimeline(projectId);
   const scheduleTask = useScheduleTask(projectId);
+  const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.Day);
 
   const fullTitleMap = useMemo(
     () => new Map((data?.tasks ?? []).map(t => [t.id, t.title])),
@@ -188,10 +189,24 @@ export default function ProjectTimelinePage() {
       <section style={sectionStyle}>
         <ProjectNav projectId={projectId} />
         <h1>Project timeline</h1>
+        <div style={viewToggleBarStyle}>
+          <div style={segmentedToggleStyle}>
+            {([ViewMode.Day, ViewMode.Week] as const).map(mode => (
+              <button
+                key={mode}
+                onClick={() => setViewMode(mode)}
+                style={viewMode === mode ? activeSegmentStyle : inactiveSegmentStyle}
+                aria-pressed={viewMode === mode}
+              >
+                {mode === ViewMode.Day ? 'Day' : 'Week'}
+              </button>
+            ))}
+          </div>
+        </div>
         <div style={ganttWrapperStyle}>
           <Gantt
             tasks={ganttTasks}
-            viewMode={ViewMode.Week}
+            viewMode={viewMode}
             listCellWidth="180px"
             barBackgroundColor="var(--color-accent-soft)"
             barBackgroundSelectedColor="var(--color-accent)"
@@ -227,4 +242,40 @@ const ganttWrapperStyle: React.CSSProperties = {
 const mutedStyle: React.CSSProperties = {
   color: 'var(--color-text-muted)',
   fontSize: 'var(--font-size-sm)',
+};
+
+const viewToggleBarStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 'var(--space-2)',
+};
+
+const segmentedToggleStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  border: '1px solid var(--color-border)',
+  borderRadius: 'var(--radius-md)',
+  overflow: 'hidden',
+  backgroundColor: 'var(--color-surface)',
+};
+
+const baseSegmentStyle: React.CSSProperties = {
+  padding: '4px 14px',
+  fontSize: 'var(--font-size-sm)',
+  fontFamily: 'inherit',
+  border: 'none',
+  cursor: 'pointer',
+  transition: 'background-color 0.15s, color 0.15s',
+  lineHeight: 1.5,
+};
+
+const activeSegmentStyle: React.CSSProperties = {
+  ...baseSegmentStyle,
+  backgroundColor: 'var(--color-accent)',
+  color: '#fff',
+};
+
+const inactiveSegmentStyle: React.CSSProperties = {
+  ...baseSegmentStyle,
+  backgroundColor: 'transparent',
+  color: 'var(--color-text)',
 };
