@@ -4354,3 +4354,23 @@ What was tested:
 Follow-up risk / notes:
 - `handleDeleteConfirm` still uses `setSearchParams` after deleting a workspace; that path is fine because the user is presumably already on the dashboard (or it redirects them there via their own delete flow). No change needed there.
 - Next pending task: TASK-127 (replace Board status filter buttons with a multiselect combobox).
+
+## 2026-05-01 — TASK-127: Replace Board status filter buttons with multiselect combobox
+
+### What changed
+- `frontend/src/modules/kanban/components/BoardFilters.tsx`:
+  - Replaced the per-column chip button row with a single "Status" dropdown button + checkbox panel.
+  - Added `useState` (dropdown open/close), `useRef` (container ref for click-outside detection), `useEffect` (click-outside listener cleanup).
+  - Removed `chipRowStyle` and `chipStyle` (no longer needed).
+  - Added `triggerStyle(active)` function: button is accent-colored when any statuses are selected, neutral otherwise.
+  - Added `dropdownPanelStyle` (absolutely positioned, scrollable, max 240px tall) and `checkboxItemStyle`.
+  - The trigger label reads `Status` when nothing is selected, `Status (N)` when N columns are checked.
+  - Dropdown closes on click-outside via a `mousedown` listener attached only while the dropdown is open.
+  - The `toggleColumn` function is unchanged; the same `selectedColumnIds` array drives both Kanban and List views.
+
+### What was tested
+- `npm run build` inside `frontend/` — BUILD SUCCESS, 459 modules transformed, no TypeScript errors.
+
+### Follow-up risk
+- The dropdown is absolutely positioned relative to its container; if the filter bar is near the bottom of the screen the panel could be clipped. Acceptable for MVP (filter bar is always near the top of the board page).
+- Next pending task: TASK-128 (fix avatar upload 500 → 400 on file-size limit exceeded).

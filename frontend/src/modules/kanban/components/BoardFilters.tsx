@@ -1,3 +1,4 @@
+import { useState, useEffect, useRef } from 'react';
 import type { BoardColumn } from '../types/board';
 
 export interface BoardFilterValues {
@@ -50,12 +51,6 @@ const groupStyle: React.CSSProperties = {
   gap: 'var(--space-2)',
 };
 
-const chipRowStyle: React.CSSProperties = {
-  display: 'flex',
-  flexWrap: 'wrap',
-  gap: 'var(--space-1)',
-};
-
 const clearBtnStyle: React.CSSProperties = {
   marginLeft: 'auto',
   padding: 'var(--space-1) var(--space-2)',
@@ -67,9 +62,36 @@ const clearBtnStyle: React.CSSProperties = {
   cursor: 'pointer',
 };
 
-function chipStyle(active: boolean): React.CSSProperties {
+const dropdownPanelStyle: React.CSSProperties = {
+  position: 'absolute',
+  top: '100%',
+  left: 0,
+  marginTop: '4px',
+  zIndex: 100,
+  backgroundColor: 'var(--color-bg)',
+  border: '1px solid var(--color-border)',
+  borderRadius: 'var(--radius-md)',
+  boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+  minWidth: '160px',
+  maxHeight: '240px',
+  overflowY: 'auto',
+  padding: 'var(--space-1) 0',
+};
+
+const checkboxItemStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 'var(--space-2)',
+  padding: 'var(--space-1) var(--space-3)',
+  cursor: 'pointer',
+  fontSize: 'var(--font-size-sm)',
+  color: 'var(--color-text)',
+  userSelect: 'none',
+};
+
+function triggerStyle(active: boolean): React.CSSProperties {
   return {
-    padding: '2px var(--space-2)',
+    padding: 'var(--space-1) var(--space-2)',
     fontSize: 'var(--font-size-xs)',
     fontWeight: active ? 'var(--font-weight-semibold)' : 'var(--font-weight-normal)',
     color: active ? 'var(--color-text-on-accent)' : 'var(--color-text-subtle)',
@@ -78,15 +100,23 @@ function chipStyle(active: boolean): React.CSSProperties {
     borderRadius: 'var(--radius-sm)',
     cursor: 'pointer',
     whiteSpace: 'nowrap',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
   };
 }
 
 export function BoardFilters({ columns, filters, onChange }: BoardFiltersProps) {
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
   const hasFilters =
     filters.titleSearch !== '' ||
     filters.selectedColumnIds.length > 0 ||
     filters.dateFrom !== '' ||
     filters.dateTo !== '';
+
+  const selectedCount = filters.selectedColumnIds.length;
 
   function toggleColumn(id: string) {
     const next = filters.selectedColumnIds.includes(id)
@@ -98,6 +128,17 @@ export function BoardFilters({ columns, filters, onChange }: BoardFiltersProps) 
   function clear() {
     onChange({ titleSearch: '', selectedColumnIds: [], dateFrom: '', dateTo: '' });
   }
+
+  useEffect(() => {
+    if (!dropdownOpen) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [dropdownOpen]);
 
   return (
     <div style={barStyle}>
@@ -115,17 +156,32 @@ export function BoardFilters({ columns, filters, onChange }: BoardFiltersProps) 
       {columns.length > 0 && (
         <div style={groupStyle}>
           <span style={labelStyle}>Status</span>
-          <div style={chipRowStyle}>
-            {columns.map((col) => (
-              <button
-                key={col.id}
-                type="button"
-                style={chipStyle(filters.selectedColumnIds.includes(col.id))}
-                onClick={() => toggleColumn(col.id)}
-              >
-                {col.name}
-              </button>
-            ))}
+          <div ref={dropdownRef} style={{ position: 'relative' }}>
+            <button
+              type="button"
+              style={triggerStyle(selectedCount > 0)}
+              onClick={() => setDropdownOpen((o) => !o)}
+              aria-haspopup="listbox"
+              aria-expanded={dropdownOpen}
+            >
+              Status{selectedCount > 0 ? ` (${selectedCount})` : ''}
+              <span style={{ fontSize: '9px' }}>{dropdownOpen ? '▲' : '▼'}</span>
+            </button>
+            {dropdownOpen && (
+              <div style={dropdownPanelStyle} role="listbox" aria-multiselectable="true">
+                {columns.map((col) => (
+                  <label key={col.id} style={checkboxItemStyle}>
+                    <input
+                      type="checkbox"
+                      checked={filters.selectedColumnIds.includes(col.id)}
+                      onChange={() => toggleColumn(col.id)}
+                      style={{ accentColor: 'var(--color-accent)', cursor: 'pointer' }}
+                    />
+                    {col.name}
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
