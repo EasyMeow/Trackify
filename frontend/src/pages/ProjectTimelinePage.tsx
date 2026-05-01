@@ -19,6 +19,29 @@ function truncateForBar(name: string): string {
 // Context that carries full (un-truncated) task titles to the custom table.
 const FullTitleContext = createContext<Map<string, string>>(new Map());
 
+type TaskListHeaderProps = {
+  headerHeight: number;
+  rowWidth: string;
+  fontFamily: string;
+  fontSize: string;
+};
+
+// Custom header that matches the 3-column layout of CustomTaskListTable.
+const CustomTaskListHeader: React.FC<TaskListHeaderProps> = ({
+  headerHeight,
+  rowWidth,
+  fontFamily,
+  fontSize,
+}) => (
+  <div style={{ fontFamily, fontSize, borderLeft: '1px solid #e6e4e4', borderTop: '1px solid #e6e4e4', borderBottom: '1px solid #e6e4e4' }}>
+    <div style={{ display: 'flex', height: headerHeight, fontWeight: 600, color: '#555' }}>
+      <div style={{ ...cellStyle, minWidth: rowWidth, maxWidth: rowWidth }}>Name</div>
+      <div style={{ ...cellStyle, minWidth: rowWidth, maxWidth: rowWidth }}>From</div>
+      <div style={{ ...cellStyle, minWidth: rowWidth, maxWidth: rowWidth }}>To</div>
+    </div>
+  </div>
+);
+
 type TaskListTableProps = {
   rowHeight: number;
   rowWidth: string;
@@ -203,7 +226,7 @@ export default function ProjectTimelinePage() {
             ))}
           </div>
         </div>
-        <div style={ganttWrapperStyle}>
+        <div className="ganttWrapper" style={ganttWrapperStyle}>
           <Gantt
             tasks={ganttTasks}
             viewMode={viewMode}
@@ -212,6 +235,7 @@ export default function ProjectTimelinePage() {
             barBackgroundSelectedColor="var(--color-accent)"
             todayColor="rgba(74, 139, 111, 0.12)"
             onDateChange={handleDateChange}
+            TaskListHeader={CustomTaskListHeader}
             TaskListTable={CustomTaskListTable}
           />
         </div>

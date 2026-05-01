@@ -1,1 +1,27 @@
 /* Component styles placeholder. */
+
+/*
+ * gantt-task-react renders two SVGs inside ganttVerticalContainer:
+ *   1. Calendar header SVG  – no wrapping div, sits directly inside the container
+ *   2. Bars SVG             – wrapped in horizontalContainer div with an explicit
+ *                             width={svgWidth} inline style
+ *
+ * globals.css applies `svg { max-width: 100% }` to ALL SVG elements.
+ * Because the calendar SVG has no wrapper with an explicit pixel width, its
+ * max-width resolves to the ganttVerticalContainer width (~600 px), giving it
+ * a 600-unit SVG coordinate system.  The bars SVG resolves against the 1800-px
+ * horizontalContainer, so its coordinate system is 1800 units.
+ *
+ * When the library sets scrollLeft on ganttVerticalContainer to e.g. 840 px
+ * (to reveal bars starting later in the timeline) the 600-unit calendar SVG
+ * scrolls past its own end and shows nothing – blank header.
+ *
+ * Fix: opt all SVGs inside our scroll wrapper out of the max-width rule so
+ * both the calendar and the bars SVG share the same full svgWidth coordinate
+ * system.  ganttVerticalContainer's `overflow: hidden` still clips what isn't
+ * in the visible viewport, and the library's scrollLeft mechanism keeps both
+ * SVGs in sync.
+ */
+.ganttWrapper svg {
+  max-width: none;
+}

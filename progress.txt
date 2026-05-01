@@ -4475,3 +4475,40 @@ What was tested:
 
 Follow-up risk:
 - Next pending task: TASK-134 (Gantt chart calendar header not rendering in Day/Week view).
+
+## 2026-05-02 — TASK-134: Fix Gantt chart calendar header not rendering
+
+### Root cause
+`globals.css` applies `svg { max-width: 100% }` to all SVG elements. The library
+renders two SVGs inside `ganttVerticalContainer` (overflow: hidden):
+
+1. **Calendar header SVG** – sits directly inside the container with no wrapper;
+   `max-width: 100%` resolves to the container's flex-computed width (~600 px).
+   Without a `viewBox`, the SVG coordinate system = rendered size = 600 units.
+
+2. **Bars SVG** – wrapped in `horizontalContainer` which has an explicit inline
+   `width: svgWidth (e.g. 1800 px)` style; `max-width: 100%` resolves to 1800 px.
+   Coordinate system = 1800 units.
+
+When the library sets `ganttVerticalContainer.scrollLeft` (e.g. to 840 px to centre
+the chart on today), the Calendar SVG is scrolled **past its own 600-unit end** →
+completely blank. The bars SVG is unaffected because it has its own 1800-unit space.
+
+### What changed
+- `frontend/src/shared/styles/components.css`: added `.ganttWrapper svg { max-width: none; }` with a detailed comment explaining the cause. This lets the Calendar SVG expand to its natural `svgWidth` so both SVGs share the same coordinate system and scroll in sync.
+- `frontend/src/pages/ProjectTimelinePage.tsx`:
+  - Added `className="ganttWrapper"` to the outer scroll wrapper div so the CSS rule applies.
+  - Added `CustomTaskListHeader` component (3 columns: Name/From/To, each 180px) matching `CustomTaskListTable`. Passed as `TaskListHeader={CustomTaskListHeader}` to the `<Gantt>` component for layout consistency.
+
+### What was tested
+- `npm run build` — BUILD SUCCESS, 459 modules, no TypeScript errors.
+- Manual browser test not possible (backend requires Docker/Postgres).
+- Logic verified by reasoning: with `max-width: none`, Calendar SVG = 1800 px,
+  coordinate system = 1800 units, aligns with Bars SVG. `scrollLeft` scrolls both
+  in sync. Day/week labels at `columnWidth * i` positions are now within viewport
+  after scroll.
+
+### Follow-up risk
+- The CSS fix applies to all `.ganttWrapper svg` elements. If another gantt-like
+  library is added later it would need its own wrapper class.
+- Next pending tasks: TASK-135 (hover tooltip on Gantt bars), TASK-136 (tab size inconsistency).
