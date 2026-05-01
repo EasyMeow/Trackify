@@ -4374,3 +4374,16 @@ Follow-up risk / notes:
 ### Follow-up risk
 - The dropdown is absolutely positioned relative to its container; if the filter bar is near the bottom of the screen the panel could be clipped. Acceptable for MVP (filter bar is always near the top of the board page).
 - Next pending task: TASK-128 (fix avatar upload 500 → 400 on file-size limit exceeded).
+
+## 2026-05-01 — TASK-128: Fix avatar upload HTTP 500 → HTTP 400 on file-size limit exceeded
+
+### What changed
+- `backend/src/main/java/com/trackify/common/exception/GlobalExceptionHandler.java`: Added specific `@ExceptionHandler(MaxUploadSizeExceededException.class)` handler that returns HTTP 400 with `ApiError` shape and message "Avatar file must not exceed 1 MB". This runs before the generic `Exception` handler so the 500 is no longer reachable for this case.
+- `backend/src/main/resources/application.yml`: Added `spring.servlet.multipart.max-file-size=5MB` and `max-request-size=5MB`. Raises Spring's parsing limit from the default 1 MB to 5 MB so files in the 1–5 MB range reach the controller and are rejected by the service's 1 MB business rule (returning a clean 400 via `IllegalArgumentException`). Files above 5 MB are caught by the new `MaxUploadSizeExceededException` handler and also return 400.
+- Frontend error display was already correct: `ProfilePage.tsx` line 242-244 shows `updateMe.error?.message` inline in the avatar section.
+
+### What was tested
+- `./mvnw test`: BUILD SUCCESS, 193/193 tests pass, 0 failures, 0 errors.
+
+### Follow-up risk
+- Next pending task: TASK-129 (fix sidebar overflowing viewport height).
