@@ -2410,7 +2410,7 @@
       "dependencies": [
         "TASK-125"
       ],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-127",

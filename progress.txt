@@ -4340,3 +4340,17 @@ What was tested:
 Follow-up risk / notes:
 - `useProject` fires a GET request on every project page; the request is cached by TanStack Query so no extra network cost after first load.
 - TASK-126 (clicking a workspace in the sidebar should navigate to the dashboard) is now unblocked.
+
+## 2026-05-01 — TASK-126: fix sidebar workspace click not navigating to dashboard
+
+What changed:
+- `WorkspaceSwitcher.tsx`: imported `useNavigate` from react-router-dom.
+- `handleSelect(id)` previously called `setSearchParams({ workspace: id })`, which only updated the query param on the current page — so the user stayed on e.g. `/projects/123/board` instead of going to the dashboard.
+- Changed `handleSelect` to call `navigate(\`/?workspace=\${id}\`)` so clicking any workspace always lands the user on the dashboard with the correct workspace selected.
+
+What was tested:
+- `npm run build` inside `frontend/` — succeeded (tsc + vite, 0 errors).
+
+Follow-up risk / notes:
+- `handleDeleteConfirm` still uses `setSearchParams` after deleting a workspace; that path is fine because the user is presumably already on the dashboard (or it redirects them there via their own delete flow). No change needed there.
+- Next pending task: TASK-127 (replace Board status filter buttons with a multiselect combobox).

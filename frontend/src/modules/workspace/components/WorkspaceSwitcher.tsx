@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { useSearchParams, useMatch } from 'react-router-dom';
+import { useSearchParams, useMatch, useNavigate } from 'react-router-dom';
 import { useWorkspaces } from '../hooks/useWorkspaces';
 import { useCreateWorkspace } from '../hooks/useCreateWorkspace';
 import { useUpdateWorkspace } from '../hooks/useUpdateWorkspace';
@@ -421,6 +421,7 @@ interface WorkspaceSwitcherProps {
 export function WorkspaceSwitcher({ collapsed = false }: WorkspaceSwitcherProps) {
   const { data: workspaces, isLoading } = useWorkspaces();
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [showCreate, setShowCreate] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Workspace | null>(null);
   const deleteWorkspace = useDeleteWorkspace();
@@ -442,9 +443,7 @@ export function WorkspaceSwitcher({ collapsed = false }: WorkspaceSwitcherProps)
   })();
 
   function handleSelect(id: string) {
-    const next = new URLSearchParams(searchParams);
-    next.set('workspace', id);
-    setSearchParams(next);
+    navigate(`/?workspace=${id}`);
   }
 
   function handleDeleteConfirm() {
