@@ -1,4 +1,5 @@
 import 'gantt-task-react/dist/index.css';
+import React, { createContext, useContext, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { Gantt, ViewMode } from 'gantt-task-react';
 import type { Task as GanttTask } from 'gantt-task-react';
@@ -8,10 +9,118 @@ import { useScheduleTask } from '../modules/gantt/hooks/useScheduleTask';
 import { mapTimelineToGantt } from '../modules/gantt/utils/mapTimelineToGantt';
 import { ProjectNav } from '../modules/project/components/ProjectNav';
 
+// Maximum chars for bar label display; longer names get a trailing ellipsis.
+const BAR_LABEL_MAX = 18;
+
+function truncateForBar(name: string): string {
+  return name.length > BAR_LABEL_MAX ? name.slice(0, BAR_LABEL_MAX - 1) + '…' : name;
+}
+
+// Context that carries full (un-truncated) task titles to the custom table.
+const FullTitleContext = createContext<Map<string, string>>(new Map());
+
+type TaskListTableProps = {
+  rowHeight: number;
+  rowWidth: string;
+  fontFamily: string;
+  fontSize: string;
+  locale: string;
+  tasks: GanttTask[];
+  selectedTaskId: string;
+  setSelectedTask: (taskId: string) => void;
+  onExpanderClick: (task: GanttTask) => void;
+};
+
+// Custom list table: shows full names (from context) with CSS ellipsis truncation,
+// plus From/To date columns to match the default library header layout.
+const CustomTaskListTable: React.FC<TaskListTableProps> = ({
+  rowHeight,
+  rowWidth,
+  fontFamily,
+  fontSize,
+  tasks,
+  selectedTaskId,
+  setSelectedTask,
+}) => {
+  const fullTitles = useContext(FullTitleContext);
+
+  return (
+    <div style={{ fontFamily, fontSize, borderBottom: '1px solid #e6e4e4', borderLeft: '1px solid #e6e4e4' }}>
+      {tasks.map((task, idx) => {
+        const fullName = fullTitles.get(task.id) ?? task.name;
+        const isSelected = task.id === selectedTaskId;
+        return (
+          <div
+            key={task.id + 'row'}
+            style={{
+              display: 'flex',
+              height: rowHeight,
+              backgroundColor: isSelected
+                ? 'rgba(74,139,111,0.12)'
+                : idx % 2 === 1
+                  ? '#f5f5f5'
+                  : undefined,
+              cursor: 'pointer',
+            }}
+            onClick={() => setSelectedTask(task.id)}
+          >
+            {/* Name column */}
+            <div style={{ ...cellStyle, minWidth: rowWidth, maxWidth: rowWidth }} title={fullName}>
+              <span style={nameTextStyle}>{fullName}</span>
+            </div>
+            {/* From column */}
+            <div style={{ ...cellStyle, minWidth: rowWidth, maxWidth: rowWidth }}>
+              {format(task.start, 'MMM d, yyyy')}
+            </div>
+            {/* To column */}
+            <div style={{ ...cellStyle, minWidth: rowWidth, maxWidth: rowWidth }}>
+              {format(task.end, 'MMM d, yyyy')}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const cellStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  padding: '0 8px',
+  overflow: 'hidden',
+  borderRight: '1px solid #e6e4e4',
+  boxSizing: 'border-box',
+};
+
+const nameTextStyle: React.CSSProperties = {
+  overflow: 'hidden',
+  whiteSpace: 'nowrap',
+  textOverflow: 'ellipsis',
+  flex: 1,
+  minWidth: 0,
+};
+
 export default function ProjectTimelinePage() {
   const { projectId } = useParams<{ projectId: string }>();
   const { data, isLoading, error } = useProjectTimeline(projectId);
   const scheduleTask = useScheduleTask(projectId);
+
+  const fullTitleMap = useMemo(
+    () => new Map((data?.tasks ?? []).map(t => [t.id, t.title])),
+    [data],
+  );
+
+  const { ganttTasks, datelessCount } = useMemo(() => {
+    if (!data) return { ganttTasks: [] as GanttTask[], datelessCount: 0 };
+    const result = mapTimelineToGantt(data.tasks, data.dependencies);
+    return {
+      datelessCount: result.datelessCount,
+      ganttTasks: result.ganttTasks.map(t => ({
+        ...t,
+        name: truncateForBar(t.name),
+      })),
+    };
+  }, [data]);
 
   // Called by gantt-task-react for both drag (move) and resize operations.
   // Returns false to undo the change when the range is inverted (end <= start).
@@ -61,8 +170,6 @@ export default function ProjectTimelinePage() {
     );
   }
 
-  const { ganttTasks, datelessCount } = mapTimelineToGantt(data.tasks, data.dependencies);
-
   if (ganttTasks.length === 0) {
     return (
       <section style={sectionStyle}>
@@ -77,27 +184,30 @@ export default function ProjectTimelinePage() {
   }
 
   return (
-    <section style={sectionStyle}>
-      <ProjectNav projectId={projectId} />
-      <h1>Project timeline</h1>
-      <div style={ganttWrapperStyle}>
-        <Gantt
-          tasks={ganttTasks}
-          viewMode={ViewMode.Week}
-          listCellWidth="180px"
-          barBackgroundColor="var(--color-accent-soft)"
-          barBackgroundSelectedColor="var(--color-accent)"
-          todayColor="rgba(74, 139, 111, 0.12)"
-          onDateChange={handleDateChange}
-        />
-      </div>
-      {datelessCount > 0 && (
-        <p style={mutedStyle}>
-          {datelessCount} task{datelessCount !== 1 ? 's' : ''} not shown — no
-          start or due date set.
-        </p>
-      )}
-    </section>
+    <FullTitleContext.Provider value={fullTitleMap}>
+      <section style={sectionStyle}>
+        <ProjectNav projectId={projectId} />
+        <h1>Project timeline</h1>
+        <div style={ganttWrapperStyle}>
+          <Gantt
+            tasks={ganttTasks}
+            viewMode={ViewMode.Week}
+            listCellWidth="180px"
+            barBackgroundColor="var(--color-accent-soft)"
+            barBackgroundSelectedColor="var(--color-accent)"
+            todayColor="rgba(74, 139, 111, 0.12)"
+            onDateChange={handleDateChange}
+            TaskListTable={CustomTaskListTable}
+          />
+        </div>
+        {datelessCount > 0 && (
+          <p style={mutedStyle}>
+            {datelessCount} task{datelessCount !== 1 ? 's' : ''} not shown — no
+            start or due date set.
+          </p>
+        )}
+      </section>
+    </FullTitleContext.Provider>
   );
 }
 

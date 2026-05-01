@@ -4286,3 +4286,23 @@ Follow-up risk:
 
 ### Follow-up risk
 - Without `ganttHeight`, very large task lists will make the timeline page tall. Acceptable for MVP.
+
+## 2026-05-01 — TASK-123: Truncate long task names in timeline table and bars
+
+### What changed
+- `frontend/src/pages/ProjectTimelinePage.tsx`:
+  - Added `FullTitleContext` (React context) to carry full un-truncated task titles to the custom table component.
+  - Added `CustomTaskListTable` (module-level React component) that replaces the library's default task list table. It renders Name/From/To columns matching the header, and applies CSS truncation (`overflow: hidden; white-space: nowrap; text-overflow: ellipsis; flex: 1; min-width: 0`) to the name cell so long titles get a trailing ellipsis at the 180px column boundary.
+  - Added `truncateForBar(name, BAR_LABEL_MAX=18)`: pre-truncates task names to 18 chars (with `…` suffix) before passing to `gantt-task-react`. This ensures bar labels fit inside bars for tasks spanning 2+ weeks and never render overflowing "outside" labels for typical names.
+  - Moved `mapTimelineToGantt` + name-truncation into a `useMemo` (called before early returns to satisfy React hooks rules).
+  - Added `fullTitleMap` useMemo to feed full titles into `FullTitleContext.Provider`.
+  - Wrapped the gantt render in `<FullTitleContext.Provider value={fullTitleMap}>` so the custom table reads full names.
+
+### What was tested
+- `npm run build` (tsc + vite): 459 modules, no errors, exit 0.
+- `npm run lint`: 5 pre-existing errors in other files; 0 errors introduced in `ProjectTimelinePage.tsx`.
+- Browser visual test: not possible (Playwright permissions denied). Build correctness and type safety confirmed via tsc.
+
+### Follow-up risk
+- Pre-truncation at 18 chars is a heuristic. Very short bars (< 2 weeks) will still render the label outside the bar via the library's `barLabelOutside` mechanism; the label is shorter but may still appear to the right. A proper fix would require a custom bar renderer (not exposed by `gantt-task-react` v0.3.9).
+- The `CustomTaskListTable` replicates the library's 3-column layout (Name/From/To) but uses simpler date formatting (`date-fns` format vs. `toLocaleDateString`). If the locale matters, a `toLocaleDateString` call should be substituted.
