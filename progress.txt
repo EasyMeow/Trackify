@@ -4512,3 +4512,19 @@ completely blank. The bars SVG is unaffected because it has its own 1800-unit sp
 - The CSS fix applies to all `.ganttWrapper svg` elements. If another gantt-like
   library is added later it would need its own wrapper class.
 - Next pending tasks: TASK-135 (hover tooltip on Gantt bars), TASK-136 (tab size inconsistency).
+
+## 2026-05-02 — TASK-135: Add tooltip for full task title on Gantt bar hover
+
+What changed:
+- `frontend/src/pages/ProjectTimelinePage.tsx`:
+  - Added `CustomTooltipContent` component that reads the full (un-truncated) task title from `FullTitleContext` via `task.id` and renders it alongside the date range.
+  - Passed `TooltipContent={CustomTooltipContent}` to the `<Gantt>` component. The library handles hover detection and timing (~300 ms delay is built-in).
+  - Added `tooltipStyle`, `tooltipTitleStyle`, and `tooltipDateStyle` const style objects at the bottom of the file.
+
+What was tested:
+- `npm run build` — BUILD SUCCESS, 459 modules, TypeScript clean, no errors.
+
+Follow-up risk / notes:
+- Tooltip timing (show/hide delay) is controlled by `gantt-task-react` internals; no custom delay logic needed.
+- `pointerEvents: none` on the tooltip prevents it from interfering with bar drag handles.
+- Next pending task: TASK-136 (tab button size inconsistency across Board/Timeline/Settings pages).

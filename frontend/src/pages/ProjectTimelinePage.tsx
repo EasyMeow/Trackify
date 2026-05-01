@@ -19,6 +19,26 @@ function truncateForBar(name: string): string {
 // Context that carries full (un-truncated) task titles to the custom table.
 const FullTitleContext = createContext<Map<string, string>>(new Map());
 
+type TooltipContentProps = {
+  task: GanttTask;
+  fontSize: string;
+  fontFamily: string;
+};
+
+// Shows the full (un-truncated) task title and date range on bar hover.
+const CustomTooltipContent: React.FC<TooltipContentProps> = ({ task, fontSize, fontFamily }) => {
+  const fullTitles = useContext(FullTitleContext);
+  const fullName = fullTitles.get(task.id) ?? task.name;
+  return (
+    <div style={{ fontFamily, fontSize, ...tooltipStyle }}>
+      <span style={tooltipTitleStyle}>{fullName}</span>
+      <span style={tooltipDateStyle}>
+        {format(task.start, 'MMM d')} – {format(task.end, 'MMM d, yyyy')}
+      </span>
+    </div>
+  );
+};
+
 type TaskListHeaderProps = {
   headerHeight: number;
   rowWidth: string;
@@ -237,6 +257,7 @@ export default function ProjectTimelinePage() {
             onDateChange={handleDateChange}
             TaskListHeader={CustomTaskListHeader}
             TaskListTable={CustomTaskListTable}
+            TooltipContent={CustomTooltipContent}
           />
         </div>
         {datelessCount > 0 && (
@@ -302,4 +323,28 @@ const inactiveSegmentStyle: React.CSSProperties = {
   ...baseSegmentStyle,
   backgroundColor: 'transparent',
   color: 'var(--color-text)',
+};
+
+const tooltipStyle: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 4,
+  padding: '8px 12px',
+  backgroundColor: 'var(--color-surface)',
+  border: '1px solid var(--color-border)',
+  borderRadius: 'var(--radius-md)',
+  boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+  maxWidth: 280,
+  pointerEvents: 'none',
+};
+
+const tooltipTitleStyle: React.CSSProperties = {
+  fontWeight: 600,
+  color: 'var(--color-text)',
+  wordBreak: 'break-word',
+};
+
+const tooltipDateStyle: React.CSSProperties = {
+  color: 'var(--color-text-muted)',
+  fontSize: '0.8em',
 };
