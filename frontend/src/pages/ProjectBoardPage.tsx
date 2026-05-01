@@ -236,6 +236,14 @@ export default function ProjectBoardPage() {
     moveTask.mutate(
       { taskId: draggedTaskId, columnId: targetColumnId, sortOrder },
       {
+        onSuccess: () => {
+          setDragOverrides((prev) => {
+            if (!prev.has(draggedTaskId)) return prev;
+            const next = new Map(prev);
+            next.delete(draggedTaskId);
+            return next;
+          });
+        },
         onError: () => {
           setDragOverrides((prev) => {
             if (!prev.has(draggedTaskId)) return prev;

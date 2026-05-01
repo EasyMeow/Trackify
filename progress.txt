@@ -4460,3 +4460,18 @@ Follow-up risk / notes:
 - Manual verification (drag columns in the browser) requires the new migration to be applied — restart the backend to trigger Flyway.
 - The constraint is still enforced; only the timing moves from per-row to per-transaction.
 - Next pending tasks: TASK-133 (task card not moving immediately after status change in modal), TASK-134 (Gantt header not rendering).
+
+## 2026-05-01 -- TASK-133: Fix task card not moving immediately after status change in drawer
+
+Root cause:
+ProjectBoardPage keeps a dragOverrides map for optimistic DnD UI. Overrides were only deleted on error (rollback), never on success. After a drag (Todo->InProgress), the override persisted indefinitely. When the user then changed status from the drawer (InProgress->Done), useMoveTask.onSuccess invalidated the board and the server returned the task in Done. But applyOverrides still had the stale entry which moved the task back to InProgress visually -- ignoring the new server position.
+
+What changed:
+- frontend/src/modules/kanban/hooks/useMoveTask.ts: In onSuccess, immediately update the board cache via setQueryData (moves the card to the target column in-place, updating status and sortOrder from updatedTask). This ensures the board cache reflects the new position before any React re-render. invalidateQueries kept for eventual consistency.
+- frontend/src/pages/ProjectBoardPage.tsx: Added onSuccess to the per-call mutate options in handleDragEnd that removes the drag override for the moved task. Previously only onError removed it. Override now lives only during the in-flight API call window and is replaced by the already-correct board cache on success.
+
+What was tested:
+- npm run build -- BUILD SUCCESS, TypeScript clean, 459 modules.
+
+Follow-up risk:
+- Next pending task: TASK-134 (Gantt chart calendar header not rendering in Day/Week view).
