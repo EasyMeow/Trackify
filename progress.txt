@@ -4401,3 +4401,17 @@ What was tested:
 Follow-up risk / notes:
 - `position: sticky` requires the parent not to have `overflow: hidden`; the outer AppShell div has no such constraint so it works correctly.
 - Next pending task: TASK-130 (replace #ffffff background with #f8f8f6).
+
+## 2026-05-01 — TASK-130: Replace #ffffff background with #f8f8f6
+
+What changed:
+- `frontend/src/shared/styles/tokens.css`: changed `--color-surface` from `#ffffff` to `#f8f8f6`.
+- This single token change propagates to all surfaces (sidebar, cards, drawers, modals, auth forms) that reference `var(--color-surface)` throughout the app.
+- `--color-text-on-accent: #ffffff` was intentionally left unchanged — it is text color on accent buttons, not a background.
+
+What was tested:
+- Grep confirmed no hardcoded `#ffffff` or `white` background values exist in TSX inline styles; only the token needed updating.
+- `npm run build` inside `frontend/` — BUILD SUCCESS, no TypeScript errors.
+
+Follow-up risk / notes:
+- Next pending task: TASK-131 (Day/Week view mode toggle on the timeline page).
