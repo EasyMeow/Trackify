@@ -4438,3 +4438,25 @@ What was tested:
 Follow-up risk / notes:
 - This was the last pending task in tasks.json. All 131 tasks are now done.
 - The `gantt-task-react` library exposes `ViewMode.Month` and `ViewMode.QuarterDay` etc. — not exposed in the toggle per task scope.
+
+## 2026-05-01 — TASK-132: Fix HTTP 500 when reordering Kanban columns
+
+Root cause:
+- The `board_columns` table has a `UNIQUE(project_id, position)` constraint.
+- `BoardColumnService.reorderColumns()` iterates the new column order and calls `boardColumnRepository.save(col)` one row at a time.
+- When Hibernate flushes these UPDATEs to Postgres, intermediate positions collide (e.g., column A moves from 0→1 while column B is already at 1), violating the unique constraint and producing a 500 error.
+
+What changed:
+- Added Flyway migration `V11__defer_board_column_position_unique.sql`.
+- The migration drops the existing `board_columns_project_position_unique` constraint and recreates it as `DEFERRABLE INITIALLY DEFERRED`.
+- With a deferred constraint Postgres only checks uniqueness at COMMIT time, by which point all positions are in their final unique state. No Java code changes were needed.
+
+What was tested:
+- `./mvnw compile test-compile` — BUILD SUCCESS.
+- `./mvnw test` — 36 test suites, all passing, no failures.
+- All existing tests use MockMvc + Mockito and are unaffected by the migration.
+
+Follow-up risk / notes:
+- Manual verification (drag columns in the browser) requires the new migration to be applied — restart the backend to trigger Flyway.
+- The constraint is still enforced; only the timing moves from per-row to per-transaction.
+- Next pending tasks: TASK-133 (task card not moving immediately after status change in modal), TASK-134 (Gantt header not rendering).

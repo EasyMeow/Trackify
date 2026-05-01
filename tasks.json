@@ -2516,6 +2516,111 @@
         "TASK-130"
       ],
       "status": "done"
+    },
+    {
+      "id": "TASK-132",
+      "phase": "Bug fixes",
+      "category": "board",
+      "priority": "high",
+      "description": "Fix HTTP 500 error when reordering Kanban columns by dragging them between each other.",
+      "start_condition": "Dragging a column to a new position triggers a 500 response from the backend column-reorder endpoint.",
+      "acceptance_criteria": [
+        "Dragging any column to a new position persists the new order without any server error.",
+        "The columns remain in the dropped order after the drag completes and after a page refresh.",
+        "No 4xx or 5xx errors appear in the network tab when columns are reordered."
+      ],
+      "test_steps": [
+        "Open the Board page, drag a column to a different position, and confirm no error toast appears and the network request returns 2xx.",
+        "Refresh the page and confirm the new column order is preserved."
+      ],
+      "dependencies": [
+        "TASK-131"
+      ],
+      "status": "done"
+    },
+    {
+      "id": "TASK-133",
+      "phase": "Bug fixes",
+      "category": "board",
+      "priority": "high",
+      "description": "Fix task not moving to the correct Kanban column after its status is changed in the task edit modal — the move should happen immediately without a page refresh.",
+      "start_condition": "Changing a task's status inside the edit modal and saving does not move the task card to the matching column until the page is manually refreshed.",
+      "acceptance_criteria": [
+        "After saving a status change in the task edit modal the task card appears in the column that matches the new status immediately.",
+        "The task card is removed from its previous column immediately on save.",
+        "No page reload is required to reflect the new column placement."
+      ],
+      "test_steps": [
+        "Open a task in the IN PROGRESS column, change its status to DONE in the edit modal, save, and confirm the card moves to the DONE column without a page refresh.",
+        "Confirm the card is no longer visible in the IN PROGRESS column after the move."
+      ],
+      "dependencies": [
+        "TASK-132"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-134",
+      "phase": "Bug fixes",
+      "category": "timeline",
+      "priority": "high",
+      "description": "Fix the Gantt chart calendar header (month, week numbers, or day numbers) not rendering in the top row of the timeline component in both Day and Week view modes.",
+      "start_condition": "The date header row at the top of the Gantt chart area is blank — month labels, week numbers, and day numbers are not displayed regardless of the selected view mode.",
+      "acceptance_criteria": [
+        "In Day view the header row shows the month name and individual day numbers aligned with their columns.",
+        "In Week view the header row shows the month name and week numbers (W17, W18, …) aligned with their columns.",
+        "The header is visible on initial page load and after switching between Day and Week modes."
+      ],
+      "test_steps": [
+        "Open the Timeline page in Day view and confirm the top header row shows month and day labels.",
+        "Switch to Week view and confirm the header shows month and week-number labels.",
+        "Switch back to Day view and confirm the header is still correct."
+      ],
+      "dependencies": [
+        "TASK-133"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-135",
+      "phase": "Bug fixes",
+      "category": "timeline",
+      "priority": "low",
+      "description": "Add a tooltip that shows the full task title when hovering over a task bar in the Gantt timeline.",
+      "start_condition": "Task bars in the Gantt chart show a truncated title inside the bar with no way to see the full title on hover.",
+      "acceptance_criteria": [
+        "Hovering over any task bar in the timeline shows a tooltip with the complete task title.",
+        "The tooltip appears within ~300 ms of hover and disappears when the cursor leaves the bar.",
+        "The tooltip does not overflow the viewport."
+      ],
+      "test_steps": [
+        "Open the Timeline page, hover over a task bar with a long title, and confirm the full title appears in a tooltip.",
+        "Confirm the tooltip disappears when moving the cursor off the bar."
+      ],
+      "dependencies": [
+        "TASK-134"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-136",
+      "phase": "Hardening and polish",
+      "category": "polish",
+      "priority": "low",
+      "description": "Fix the Board/Timeline/Settings navigation tab components rendering larger on the Board page than on the Timeline and Settings pages.",
+      "start_condition": "At the same screen resolution the navigation tab pill buttons appear visually larger when the Board route is active compared to the Timeline and Settings routes.",
+      "acceptance_criteria": [
+        "The Board, Timeline, and Settings tab buttons have identical dimensions (height, padding, font size) regardless of which route is currently active.",
+        "The fix is applied via shared CSS so all three routes are consistent."
+      ],
+      "test_steps": [
+        "Navigate between Board, Timeline, and Settings and confirm the tab buttons appear identical in size on all three pages.",
+        "Check at the same browser window size used during the bug report."
+      ],
+      "dependencies": [
+        "TASK-135"
+      ],
+      "status": "pending"
     }
   ]
 }
