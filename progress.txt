@@ -4324,3 +4324,19 @@ Follow-up risk / notes:
 - The `fromMs` / `toMs` derivations still use `new Date(dateFrom)` where `dateFrom` is a "YYYY-MM-DD" string from a date input. This is fine: date-only ISO strings are always parsed as UTC midnight per spec, and all browsers handle them correctly.
 - The underlying backend issue (nanosecond-precision Instant serialization) could be fixed at the source by setting `spring.jackson.serialization.write-dates-as-nanoseconds: false` in `application.yml`, which would cap all Instant output to milliseconds (3 fractional digits). This is optional cleanup but would benefit any future code that uses `new Date()` directly.
 - Next pending task: TASK-125 (fix sidebar highlighting wrong workspace when navigating inside a project).
+
+## 2026-05-01 — TASK-125: Fix sidebar highlighting wrong workspace when inside a project
+
+What changed:
+- In `WorkspaceSwitcher.tsx`: added `useMatch('/projects/:projectId/*')` to detect when the user is on a project page, and `useProject(projectId)` to fetch the current project.
+- The `selectedId` derivation now checks `currentProject?.workspaceId` first. If the project is loaded and its `workspaceId` is in the user's workspace list, that workspace is highlighted — regardless of the `?workspace=` URL param.
+- Falls back to the `?workspace=` URL param and then `workspaces[0]` as before for non-project pages.
+- Added imports for `useMatch` (react-router-dom) and `useProject` (project hooks).
+
+What was tested:
+- `npm run build` inside `frontend/` — BUILD SUCCESS, 459 modules transformed, no type errors.
+- (Manual test: open a project from the second workspace; sidebar highlights the second workspace. Deferred — no browser available.)
+
+Follow-up risk / notes:
+- `useProject` fires a GET request on every project page; the request is cached by TanStack Query so no extra network cost after first load.
+- TASK-126 (clicking a workspace in the sidebar should navigate to the dashboard) is now unblocked.

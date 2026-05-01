@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useMatch } from 'react-router-dom';
 import { useWorkspaces } from '../hooks/useWorkspaces';
 import { useCreateWorkspace } from '../hooks/useCreateWorkspace';
 import { useUpdateWorkspace } from '../hooks/useUpdateWorkspace';
 import { useDeleteWorkspace } from '../hooks/useDeleteWorkspace';
+import { useProject } from '../../project/hooks/useProject';
 import type { Workspace } from '../types/workspace';
 
 // ─── styles ──────────────────────────────────────────────────────────────────
@@ -424,11 +425,21 @@ export function WorkspaceSwitcher({ collapsed = false }: WorkspaceSwitcherProps)
   const [deleteTarget, setDeleteTarget] = useState<Workspace | null>(null);
   const deleteWorkspace = useDeleteWorkspace();
 
+  const projectMatch = useMatch('/projects/:projectId/*');
+  const projectId = projectMatch?.params.projectId;
+  const { data: currentProject } = useProject(projectId);
+
   const urlValue = searchParams.get('workspace');
-  const selectedId =
-    workspaces && workspaces.some((w) => w.id === urlValue)
-      ? (urlValue as string)
-      : (workspaces?.[0]?.id ?? null);
+  const selectedId = (() => {
+    // When inside a project page, derive the active workspace from the project
+    if (currentProject?.workspaceId && workspaces?.some((w) => w.id === currentProject.workspaceId)) {
+      return currentProject.workspaceId;
+    }
+    if (workspaces && workspaces.some((w) => w.id === urlValue)) {
+      return urlValue as string;
+    }
+    return workspaces?.[0]?.id ?? null;
+  })();
 
   function handleSelect(id: string) {
     const next = new URLSearchParams(searchParams);
