@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef } from 'react';
 import { useParams } from 'react-router-dom';
+import { parseISO } from 'date-fns';
 import {
   DndContext,
   DragOverlay,
@@ -152,7 +153,7 @@ export default function ProjectBoardPage() {
         if (selectedColumnIds.length > 0 && !selectedColumnIds.includes(col.id)) return false;
         if (titleSearch && !task.title.toLowerCase().includes(titleSearch.toLowerCase())) return false;
         if (fromMs !== null || toMs !== null) {
-          const createdMs = new Date(task.createdAt).getTime();
+          const createdMs = parseISO(task.createdAt).getTime();
           if (fromMs !== null && createdMs < fromMs) return false;
           if (toMs !== null && createdMs > toMs) return false;
         }

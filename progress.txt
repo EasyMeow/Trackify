@@ -4306,3 +4306,21 @@ Follow-up risk:
 ### Follow-up risk
 - Pre-truncation at 18 chars is a heuristic. Very short bars (< 2 weeks) will still render the label outside the bar via the library's `barLabelOutside` mechanism; the label is shorter but may still appear to the right. A proper fix would require a custom bar renderer (not exposed by `gantt-task-react` v0.3.9).
 - The `CustomTaskListTable` replicates the library's 3-column layout (Name/From/To) but uses simpler date formatting (`date-fns` format vs. `toLocaleDateString`). If the locale matters, a `toLocaleDateString` call should be substituted.
+
+## 2026-05-01 — TASK-124: Fix creation date range filter on Board page
+
+What changed:
+- In `ProjectBoardPage.tsx`: replaced `new Date(task.createdAt).getTime()` with `parseISO(task.createdAt).getTime()` in the date range filter logic.
+- Added `import { parseISO } from 'date-fns'` at the top of the file.
+
+Root cause:
+The backend serializes `Instant` (Java) via Jackson's `ISO_INSTANT` formatter which emits sub-millisecond precision when the system clock provides it — typically 6 digits (microseconds from PostgreSQL) or 9 digits (nanoseconds from `Instant.now()`). For example: `"2026-04-25T10:30:00.123456789Z"`. The ECMAScript Date Time String Format only specifies 3 fractional digits (milliseconds). Safari strictly rejects strings with more than 3 fractional digits, returning `Invalid Date`. `NaN` comparisons (`NaN < fromMs`, `NaN > toMs`) are always `false`, so no task was ever filtered out by date — making the filter appear to have no effect. Chrome/V8 handles this gracefully but Safari does not. Using `date-fns`'s `parseISO` (already used in TaskDrawer.tsx and CommentList.tsx) fixes parsing on all browsers — it handles arbitrary-precision ISO 8601 strings by truncating to milliseconds.
+
+What was tested:
+- `npm run build` inside `frontend/` — BUILD SUCCESS, 459 modules transformed, no type errors.
+- (Manual browser test deferred — no dev server available; logic is correct by inspection.)
+
+Follow-up risk / notes:
+- The `fromMs` / `toMs` derivations still use `new Date(dateFrom)` where `dateFrom` is a "YYYY-MM-DD" string from a date input. This is fine: date-only ISO strings are always parsed as UTC midnight per spec, and all browsers handle them correctly.
+- The underlying backend issue (nanosecond-precision Instant serialization) could be fixed at the source by setting `spring.jackson.serialization.write-dates-as-nanoseconds: false` in `application.yml`, which would cap all Instant output to milliseconds (3 fractional digits). This is optional cleanup but would benefit any future code that uses `new Date()` directly.
+- Next pending task: TASK-125 (fix sidebar highlighting wrong workspace when navigating inside a project).
