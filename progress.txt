@@ -4528,3 +4528,29 @@ Follow-up risk / notes:
 - Tooltip timing (show/hide delay) is controlled by `gantt-task-react` internals; no custom delay logic needed.
 - `pointerEvents: none` on the tooltip prevents it from interfering with bar drag handles.
 - Next pending task: TASK-136 (tab button size inconsistency across Board/Timeline/Settings pages).
+
+## 2026-05-02 — TASK-136: Fix tab button size inconsistency across Board/Timeline/Settings
+
+What changed:
+- `frontend/src/pages/ProjectBoardPage.tsx`:
+  - `pageStyle.padding`: changed from `var(--space-5)` (24px) to `var(--space-6)` (32px)
+    to match the outer padding used by ProjectTimelinePage and ProjectSettingsPage.
+  - `headingStyle.fontSize`: changed from `var(--font-size-xl)` (20px) to
+    `var(--font-size-2xl)` (24px) to match the global h1 reset in globals.css and
+    the heading size used on Timeline/Settings pages.
+
+Root cause:
+- The Board page had less outer padding (24px vs 32px) and a smaller h1 (20px vs 24px)
+  than the other two project pages. This created a denser visual context around the
+  ProjectNav tabs, making them appear larger relative to the surrounding content.
+- The tab buttons themselves share identical inline styles via ProjectNav.tsx
+  (font-size: 13px, padding: 4px 12px), so the fix is in the surrounding page context.
+
+What was tested:
+- `npm run build` — BUILD SUCCESS, 459 modules, TypeScript clean, no errors.
+
+Follow-up risk / notes:
+- Board page inner content area is now 16px narrower total (8px per side), which is
+  acceptable since the kanban horizontal scroll handles overflow.
+- All three project pages now share `padding: var(--space-6)` and `h1` at 24px,
+  making the visual density consistent.

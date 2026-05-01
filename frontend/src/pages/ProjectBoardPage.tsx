@@ -30,7 +30,7 @@ const pageStyle: React.CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   gap: 'var(--space-4)',
-  padding: 'var(--space-5)',
+  padding: 'var(--space-6)',
   height: '100%',
   boxSizing: 'border-box',
 };
@@ -53,7 +53,7 @@ const mutedStyle: React.CSSProperties = {
 
 const headingStyle: React.CSSProperties = {
   margin: 0,
-  fontSize: 'var(--font-size-xl)',
+  fontSize: 'var(--font-size-2xl)',
   fontWeight: 'var(--font-weight-semibold)',
   color: 'var(--color-text)',
 };

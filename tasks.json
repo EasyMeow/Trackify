@@ -2620,7 +2620,7 @@
       "dependencies": [
         "TASK-135"
       ],
-      "status": "pending"
+      "status": "done"
     }
   ]
 }
