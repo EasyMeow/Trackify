@@ -233,6 +233,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           padding: collapsed ? `var(--space-4) var(--space-2)` : 'var(--space-4)',
           transition: `width var(--transition-default), padding var(--transition-default)`,
           overflow: 'hidden',
+          height: '100vh',
+          position: 'sticky',
+          top: 0,
         }}
       >
         {/* Header: logo (expanded) + collapse toggle */}

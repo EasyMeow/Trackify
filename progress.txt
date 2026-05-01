@@ -4387,3 +4387,17 @@ Follow-up risk / notes:
 
 ### Follow-up risk
 - Next pending task: TASK-129 (fix sidebar overflowing viewport height).
+
+## 2026-05-01 — TASK-129: Fix sidebar overflowing viewport height
+
+What changed:
+- `AppShell.tsx`: Added `height: '100vh'`, `position: 'sticky'`, `top: 0` to the `<aside>` element. The sidebar now sticks to the top of the viewport and is always constrained to 100vh regardless of content height.
+- `WorkspaceSwitcher.tsx`: In expanded mode, added `overflowY: 'auto'`, `flex: 1`, `minHeight: 0` to the `<ul>` so the workspace list scrolls independently within the sidebar when there are many workspaces. The collapsed mode already had `flex: 1; overflowY: 'auto'` on its container.
+- `AvatarMenu` at the bottom of the sidebar already uses `marginTop: 'auto'` and remains pinned at the bottom since WorkspaceSwitcher takes remaining flex space via `flex: 1`.
+
+What was tested:
+- `npm run build` succeeds with no type errors.
+
+Follow-up risk / notes:
+- `position: sticky` requires the parent not to have `overflow: hidden`; the outer AppShell div has no such constraint so it works correctly.
+- Next pending task: TASK-130 (replace #ffffff background with #f8f8f6).

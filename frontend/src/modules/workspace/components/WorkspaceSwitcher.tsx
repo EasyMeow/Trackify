@@ -538,7 +538,7 @@ export function WorkspaceSwitcher({ collapsed = false }: WorkspaceSwitcherProps)
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       <p style={captionStyle}>Workspaces</p>
-      <ul style={listStyle}>
+      <ul style={{ ...listStyle, overflowY: 'auto', flex: 1, minHeight: 0 }}>
         {workspaces.map((workspace) => (
           <WorkspaceRow
             key={workspace.id}
