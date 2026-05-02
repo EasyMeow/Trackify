@@ -4554,3 +4554,29 @@ Follow-up risk / notes:
   acceptable since the kanban horizontal scroll handles overflow.
 - All three project pages now share `padding: var(--space-6)` and `h1` at 24px,
   making the visual density consistent.
+
+## 2026-05-02 — TASK-137: Fix Gantt calendar header going blank on horizontal scroll
+
+What changed:
+- Added `import '../../shared/styles/components.css'` to `frontend/src/app/providers/ThemeProvider.tsx`.
+- `components.css` already contained the correct fix (`.ganttWrapper svg { max-width: none; }`) with a detailed comment, but the file was never imported so the rule had no effect.
+
+Root cause:
+- `globals.css` applies `svg { max-width: 100%; }` to every SVG element in the app.
+- `gantt-task-react` renders two SVGs inside `ganttVerticalContainer` (overflow: hidden):
+  1. Calendar header SVG — a direct child with no enclosing element that has an explicit pixel width.
+  2. Task bars SVG — wrapped in `horizontalContainer` div, which has `width: svgWidth` set as an inline style.
+- For the calendar SVG, `max-width: 100%` resolves against `ganttVerticalContainer` (~600 px), shrinking the SVG to ~600 px wide instead of the full `svgWidth` (often 15 000+ px for a year of days).
+- For the bars SVG, `max-width: 100%` resolves against `horizontalContainer` (svgWidth px), so the bars SVG keeps the full width.
+- When the library sets `ganttVerticalContainer.scrollLeft = 5000` to reveal later dates, the bars SVG scrolls correctly. But the 600 px calendar SVG is at container x=[0, 600] — it scrolls completely off the left edge, leaving the header row blank.
+- `.ganttWrapper svg { max-width: none; }` opts both SVGs out of the `max-width` rule, so both share the same svgWidth coordinate system and scroll in sync.
+
+What was tested:
+- `npm run build` inside `frontend/` — succeeded.
+- Build output shows `components.css` content is now bundled into `dist/assets/index-*.css`.
+- Analysis of screenshots (`timeline-initial.png`, `timeline-scrolled-5000.png`, `timeline-scrolled-15000.png`) confirmed the described failure mode matches the root cause exactly.
+
+Follow-up risk / notes:
+- No other SVGs in the app are inside `.ganttWrapper`, so the override is perfectly scoped.
+- If a future screen adds SVGs inside `.ganttWrapper` they will inherit `max-width: none` — likely harmless since they would also need to scroll with the Gantt.
+- All tasks are now done. MVP is complete.

@@ -2621,6 +2621,29 @@
         "TASK-135"
       ],
       "status": "done"
+    },
+    {
+      "id": "TASK-137",
+      "phase": "Bug fixes",
+      "category": "timeline",
+      "priority": "high",
+      "description": "Fix the Gantt calendar header (date labels row) going blank when scrolling right on the timeline page.",
+      "start_condition": "When scrolling horizontally on the timeline page, the date-label row at the top of the Gantt chart area becomes completely empty while task bars remain visible and correctly positioned.",
+      "acceptance_criteria": [
+        "Scrolling the Gantt chart right keeps the date header row populated with the correct date labels aligned with the visible bars at all scroll positions.",
+        "The fix does not reintroduce the clipping bug fixed in TASK-121 — bars and date headers beyond the viewport must still be reachable by scrolling right.",
+        "The left-side task table (Name, From, To) continues to display correctly at all horizontal scroll positions."
+      ],
+      "test_steps": [
+        "Open the Timeline page with at least 3 tasks that have start/due dates spanning several months.",
+        "Scroll the Gantt chart as far right as possible and confirm the header row shows date labels at every scroll position — it must never appear blank.",
+        "Confirm the header labels match the bars visible in the viewport (i.e., the dates align with the columns).",
+        "Repeat the above in both Day and Week view modes."
+      ],
+      "dependencies": [
+        "TASK-136"
+      ],
+      "status": "done"
     }
   ]
 }

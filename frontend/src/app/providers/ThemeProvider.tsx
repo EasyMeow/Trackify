@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 
 import '../../shared/styles/tokens.css';
 import '../../shared/styles/globals.css';
+import '../../shared/styles/components.css';
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
