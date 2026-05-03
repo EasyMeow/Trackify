@@ -166,14 +166,37 @@ TypeScript `strict` mode is on; do not disable it.
 - **`Could not resolve dependency` on `npm install`** — delete `frontend/node_modules` and `frontend/package-lock.json`, then re-run `npm install`.
 - **Login returns `INVALID_CREDENTIALS` immediately** — the `users` row is missing or the hash does not match what the BCrypt encoder produces. Re-do [Creating the first user](#creating-the-first-user) and confirm the hash starts with `$2a$10$` (matching `AUTH_PASSWORD_ENCODER_STRENGTH=10`).
 
-## Production hardening notes
+## Production deployment (Docker + HTTPS)
 
-The defaults in `.env.example` are tuned for local dev. Before exposing the stack:
+`docker-compose.prod.yml` runs the full stack (PostgreSQL, Spring Boot, nginx) with automatic TLS via Let's Encrypt.
 
-- Flip `SERVER_SERVLET_SESSION_COOKIE_SECURE=true` and prefer `SAME_SITE=strict`.
+### First deploy
+
+1. Point your domain's A record at the server's IP.
+2. Copy `.env.example` to `.env` and fill in the production section (`DOMAIN`, `LETSENCRYPT_EMAIL`, `FRONTEND_ORIGIN`, strong passwords).
+3. Obtain the initial TLS certificate and start the stack:
+
+```bash
+./init-ssl.sh
+```
+
+The script stops the frontend temporarily, runs certbot standalone to get the cert, then brings up the full stack over HTTPS.
+
+### Ongoing
+
+The `certbot` container renews certificates automatically every 12 hours using the webroot method (nginx stays up). After each renewal nginx needs a reload to pick up the new cert. Add this to the server's crontab:
+
+```bash
+crontab -e
+# add:
+0 */12 * * * docker exec trackify-frontend nginx -s reload
+```
+
+### Hardening checklist
+
 - Replace every `changeme` / placeholder credential.
-- Serve the SPA and the API behind the same TLS-terminating proxy so the session cookie can stay first-party.
-- Set `AUTH_PASSWORD_ENCODER_STRENGTH` to 12 if request latency on login allows it.
+- `SERVER_SERVLET_SESSION_COOKIE_SECURE` is `true` by default in the prod compose — keep it that way.
+- Set `AUTH_PASSWORD_ENCODER_STRENGTH` to 12 if login latency allows it.
 
 ## More
 
